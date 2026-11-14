@@ -1,0 +1,5 @@
+<Bindings>
+  <Binding name="GUIAFOREVER_CAPA" header="GUIAFOREVER" category="ADDONS">
+    if GuiaForever and GuiaForever.layerHop then GuiaForever.layerHop.start() end
+  </Binding>
+</Bindings>
