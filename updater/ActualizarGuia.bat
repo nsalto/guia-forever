@@ -1,6 +1,6 @@
 @echo off
 rem Guia Forever updater for Windows: double click to install or update the addon from GitHub.
-rem Downloads the main branch, copies the addon files into World of Warcraft\_forever_\Interface\AddOns\GuiaForever.
+rem Downloads the latest release (GuiaForever.zip), copies the addon files into World of Warcraft\_forever_\Interface\AddOns\GuiaForever.
 title Actualizar Guia Forever
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop';" ^
@@ -19,10 +19,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$zip = Join-Path $tmp 'guia.zip';" ^
   "Write-Host 'Bajando la ultima version...';" ^
   "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;" ^
-  "Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/nsalto/guia-forever/archive/refs/heads/main.zip' -OutFile $zip;" ^
+  "Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/nsalto/guia-forever/releases/latest/download/GuiaForever.zip' -OutFile $zip;" ^
   "Expand-Archive -Path $zip -DestinationPath $tmp -Force;" ^
-  "$src = Join-Path $tmp 'guia-forever-main'; $dst = Join-Path $addons 'GuiaForever';" ^
-  "foreach ($x in @('tools','docs','updater','.gitignore','README.md','THIRD_PARTY_LICENSES.md')) { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $src $x) }" ^
+  "$src = Join-Path $tmp 'GuiaForever'; $dst = Join-Path $addons 'GuiaForever';" ^
   "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $dst, (Join-Path $addons 'GuiaForever_Data');" ^
   "Move-Item -Path $src -Destination $dst;" ^
   "Remove-Item -Recurse -Force $tmp;" ^

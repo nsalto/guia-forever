@@ -2,13 +2,14 @@
 
 ## Instalar o actualizar (Windows)
 
-1. Bajá **[ActualizarGuia.bat](https://github.com/nsalto/guia-forever/raw/main/updater/ActualizarGuia.bat)**
-   y guardalo en el escritorio (si el navegador avisa, elegí *Conservar*).
-2. Doble clic. Si aparece "Windows protegió tu PC": *Más información → Ejecutar de todas formas*.
-3. Cerrá y abrí el juego.
+1. Hacé clic acá: **[Bajar ActualizarGuia.bat](https://github.com/nsalto/guia-forever/releases/latest/download/ActualizarGuia.bat)**
+   (se descarga solo; si el navegador pregunta, elegí *Conservar*). Movelo al escritorio.
+2. Doble clic. La primera vez Windows puede decir "Windows protegió tu PC": *Más información → Ejecutar de todas formas*.
+3. Abrí el juego. Para actualizar más adelante: doble clic de nuevo, nada más.
 
-Para actualizar más adelante, doble clic de nuevo. En Mac es igual con
-[ActualizarGuia.command](https://github.com/nsalto/guia-forever/raw/main/updater/ActualizarGuia.command).
+Sin actualizador: [GuiaForever.zip](https://github.com/nsalto/guia-forever/releases/latest/download/GuiaForever.zip),
+descomprimilo en `World of Warcraft\_forever_\Interface\AddOns`. En Mac:
+[ActualizarGuia.command](https://github.com/nsalto/guia-forever/releases/latest/download/ActualizarGuia.command).
 
 A World of Warcraft: Forever (client 1.60.x, `## Interface: 16001`) addon: a small movable window
 that guides a player while leveling. In-game text is in Spanish (esMX); the deepest content is for rogues.
@@ -88,11 +89,10 @@ Every section title can be clicked to fold or unfold it; the choice is remembere
 
 Copy the `GuiaForever/` folder (the repository contents) into `World of Warcraft/_forever_/Interface/AddOns/`.
 
-**One-click update** (for players): download `updater/ActualizarGuia.bat` (Windows) or
-`updater/ActualizarGuia.command` (macOS), put it anywhere (the desktop) and double click it. It downloads the
-`main` branch from GitHub, removes the old `GuiaForever` (and any old `GuiaForever_Data`) folder and copies the
-addon in. The AddOns folder is found in the usual install locations or picked once in a folder dialog, and
-remembered. Every push to `main` is a new version for everyone who runs it.
+**One-click update** (for players): `ActualizarGuia.bat` (Windows) or `ActualizarGuia.command` (macOS) from the
+latest release; double click it. It downloads the latest release's `GuiaForever.zip`, removes the old `GuiaForever`
+(and any old `GuiaForever_Data`) folder and copies the addon in. The AddOns folder is found in the usual install locations or picked once in a folder dialog, and
+remembered. Each release is a new version for everyone who runs it.
 
 Restart the game client after installing (a new addon folder is not picked up by `/reload`).
 
