@@ -646,7 +646,7 @@ local function buildDungeons()
       local link = ready and G.dq.goalLink(d) or ""
       local enter = ""
       if d.enter then
-        for i, x in ipairs(G.dungeons) do if x == d then enter = " " .. actionLink("dqenter", i, "Ir a la entrada") end end
+        for i, x in ipairs(G.dungeons) do if x == d then enter = " " .. G.core.actionLink("dqenter", i, "Ir a la entrada") end end
       end
       L("  " .. C.grey .. d.where .. C.r .. enter .. link)
       if near then
