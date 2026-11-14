@@ -1,8 +1,8 @@
 -- Guía Forever: quest database access (data in DataQuestDB.lua, generated data;
 -- call Q.ready() before reading Q.quests and the other tables).
 -- Who gives and takes each quest, its prerequisites, what it asks for, and where all of that is on the client's map.
--- Positions are stored as classic map %; Forever redrew some zone maps, so they go classic % -> world yards (zoneFit,
--- fitted on DataCity's Forever world coordinates) -> this client's map % (the client's own map bounds, as CityPins.lua).
+-- Positions are stored as % of each map's frame in forever-db; they go % -> world yards (zoneFit, that frame) -> this
+-- client's map % (the client's own map bounds, as CityPins.lua), so a map Forever redraws still lands right.
 local G = GuiaForever
 G.qdb = G.qdb or {}
 local Q = G.qdb
@@ -16,7 +16,7 @@ local function say(text) if G.core and G.core.msg then G.core.msg(text) else pri
 
 Q.mapBounds = G.mapBounds
 
--- Classic map % on uiMapID -> this client's map % on the same map (unchanged when the map has no fit).
+-- Stored map % on uiMapID -> this client's map % on the same map (unchanged when the map has no fit).
 function Q.toClient(mapID, x, y)
   local fit, b = Q.zoneFit[mapID], Q.mapBounds(mapID)
   if not (fit and b) then return x, y end

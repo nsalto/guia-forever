@@ -13,13 +13,17 @@ local TAB_CLASS = 5
 
 local function try(fn, ...) local ok, a, b, c, d, e, f, g = pcall(fn, ...); if ok then return a, b, c, d, e, f, g end end
 
--- Map waypoint + the game's arrow to it (x, y from 0 to 1). The one place that sets it: quests, steps, city pins,
--- SOS and /guia ir all go through here. False when the client cannot put one on that map.
-function G.setWaypoint(mapID, x, y)
+-- Map waypoint + an arrow to it (x, y from 0 to 1). The one place that sets it: quests, steps, city pins, SOS and
+-- /guia ir all go through here. The arrow is ours (NextStep.lua: only an arrow, the name and the meters) unless that
+-- is turned off, then the game's marker. label / detail: what the arrow says and its tooltip. False when the client
+-- cannot put a waypoint on that map.
+function G.setWaypoint(mapID, x, y, label, detail)
   if not (mapID and x and y and UiMapPoint and C_Map and C_Map.SetUserWaypoint) then return false end
   if C_Map.CanSetUserWaypointOnMap and not try(C_Map.CanSetUserWaypointOnMap, mapID) then return false end
   if not pcall(C_Map.SetUserWaypoint, UiMapPoint.CreateFromCoordinates(mapID, x, y)) then return false end
-  if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then try(C_SuperTrack.SetSuperTrackedUserWaypoint, true) end
+  local own = G.nextStep and G.nextStep.ownArrow and G.nextStep.ownArrow()
+  if own then G.nextStep.point(mapID, x, y, label, detail) end
+  if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then try(C_SuperTrack.SetSuperTrackedUserWaypoint, not own) end
   return true
 end
 
@@ -162,7 +166,7 @@ local function H2(text) L(""); L(C.gold .. text .. C.r) end
 local function B(text) L("  |cff6b7280•|r " .. text) end
 local function each(list, fn) for _, v in ipairs(list or {}) do fn(v) end end
 
-local readyQuestsSummary, nearestTurnIn, goalPlan -- defined after the quest helpers
+local readyQuestsSummary, nearestTurnIn, goalPlan, buildDirect, nextStep, skipStep -- defined after the quest helpers
 
 local function specKey(classData)
   local key = DB.spec and DB.spec[select(2, UnitClass("player"))]
@@ -428,11 +432,16 @@ local function buildNow()
   -- 0) Context cards that matter most right now (e.g. the dungeon you are in).
   for _, fn in ipairs(G.topSections or {}) do local ok, err = pcall(fn, s); if not ok then B(C.red .. tostring(err) .. C.r) end end
 
-  -- 1) What to do right now (max 3 lines).
+  -- 1) The next stops in order ("Lo próximo"), then what to do right now (max 3 lines).
+  local direct = false
+  if buildDirect then
+    local ok, res = pcall(buildDirect, s)
+    if ok then direct = res == true else B(C.red .. tostring(res) .. C.r) end
+  end
   local todo = {}
   local ready = readyQuestsSummary and readyQuestsSummary()
   if ready then todo[#todo + 1] = ready end
-  local near = ready and nearestTurnIn and nearestTurnIn(s)
+  local near = ready and not direct and nearestTurnIn and nearestTurnIn(s) -- "Lo próximo" already routes turn-ins
   if near then todo[#todo + 1] = near end
   for _, item in ipairs(buildChecklist(s)) do todo[#todo + 1] = item end
   H("Para hacer ya")
@@ -477,8 +486,9 @@ local function buildNow()
   for _, d in ipairs(G.dungeons) do
     if factionOk(d, s.faction) and s.level >= d.min - 1 and s.level <= d.max then
       any = true
-      B(C.gold .. d.name .. C.r .. " (" .. d.min .. "-" .. d.max .. ") — " .. d.where)
+      B(C.gold .. d.name .. C.r .. " (" .. d.min .. "-" .. d.max .. ") — " .. d.where .. (G.dq and G.dq.goalLink(d) or ""))
       if d.howto then L("     " .. C.grey .. d.howto .. C.r) end
+      if G.dq then G.dq.render(d, true) end
     end
   end
   if not any then
@@ -603,30 +613,49 @@ end
 
 local function buildDungeons()
   local s = playerState()
-  L(C.grey .. "Verde = tu nivel. Las misiones de mazmorra dan casi toda la XP: agarralas antes de entrar." .. C.r)
-  local fdj = _G.ForeverDungeonJournal_NS
+  L(C.grey .. "Verde = tu nivel. Tocá una para abrirla. Las misiones de mazmorra dan casi toda la XP: agarralas antes de entrar." .. C.r)
+  L(C.grey .. "Detalle de jefes y botín: /dj (DungeonJournal)." .. C.r)
+  -- One card per dungeon, closed by default (the one you are preparing starts open). The title says how many of its
+  -- quests you have done, so a closed card is enough to decide.
+  local ready = G.dq and G.qdb and G.qdb.ready()
+  local goal = ready and G.dq.goal()
   for _, d in ipairs(G.dungeons) do
     if factionOk(d, s.faction) then
       local fits = s.level >= d.min - 1 and s.level <= d.max
+      local near = fits or (d.min > s.level and d.min <= s.level + 8)
       local col = fits and C.green or (s.level > d.max and C.grey or "")
-      L("")
-      L(col .. d.name .. "  (" .. d.min .. "-" .. d.max .. ")" .. (col ~= "" and C.r or "") .. (d.new and (C.orange .. "  NUEVA" .. C.r) or ""))
-      L("  " .. C.grey .. d.where .. C.r)
-      if fits or (d.min > s.level and d.min <= s.level + 8) then
-        if d.howto then B(d.howto) end
-        each(d.tips, B)
-        local fd = fdj and fdj.DB and fdj.DB[d.key or d.name]
-        if fd and fd.quests then
-          for _, q in ipairs(fd.quests) do
-            if factionOk(q, s.faction) then
-              B(C.gold .. (q.name or "?") .. C.r .. (q.level and (" (" .. q.level .. ")") or "") .. (q.pickup and (C.grey .. " — " .. q.pickup .. C.r) or ""))
-            end
+      local tail = ""
+      if ready and near then
+        local list = G.dq.list(d)
+        if #list > 0 then
+          local done, taken = 0, 0
+          for _, e in ipairs(list) do
+            if e.state == "done" then done = done + 1 elseif e.state == "log" then taken = taken + 1 end
+          end
+          local left = #list - done
+          if left == 0 then tail = C.grey .. "  ya hiciste todas" .. C.r
+          else
+            tail = "  " .. (taken > 0 and (C.green .. "tenés " .. taken .. " de " .. left .. " misiones" .. C.r)
+              or (C.grey .. left .. (left == 1 and " misión" or " misiones") .. C.r))
+              .. (done > 0 and (C.grey .. " · " .. done .. " ya hechas" .. C.r) or "")
           end
         end
       end
+      if goal == d then tail = tail .. C.gold .. "  ★ preparando" .. C.r end
+      H(col .. d.name .. (col ~= "" and C.r or "") .. "  (" .. d.min .. "-" .. d.max .. ")" .. (d.new and (C.orange .. " NUEVA" .. C.r) or "") .. tail, goal ~= d)
+      local link = ready and G.dq.goalLink(d) or ""
+      local enter = ""
+      if d.enter then
+        for i, x in ipairs(G.dungeons) do if x == d then enter = " " .. actionLink("dqenter", i, "Ir a la entrada") end end
+      end
+      L("  " .. C.grey .. d.where .. C.r .. enter .. link)
+      if near then
+        if d.howto then B(d.howto) end
+        each(d.tips, B)
+        if G.dq then G.dq.render(d) end
+      end
     end
   end
-  L(""); L(C.grey .. "Detalle de jefes y botín: /dj (DungeonJournal)." .. C.r)
 end
 
 local function buildProfessions()
@@ -1082,7 +1111,7 @@ local function goToQuest(id)
   end
   if G.setWaypoint(mapID, x, y) then
     local info = C_Map.GetMapInfo and try(C_Map.GetMapInfo, mapID)
-    msg(string.format("Marcador puesto: %s (%.1f, %.1f). Seguí la flecha.", info and info.name or "", x * 100, y * 100))
+    msg(string.format("Marcador puesto: %s (%.1f, %.1f). Lo ves en el mapa (M) y, cuando estás en esa zona, también en pantalla.", info and info.name or "", x * 100, y * 100))
     return
   end
   if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
@@ -1124,7 +1153,7 @@ local function onLink(link)
   if kind == "wp" then
     local w = waypoints[id]
     if w and G.setWaypoint(w[1], w[2], w[3]) then
-      msg(string.format("Marcador puesto en %.1f, %.1f. Seguí la flecha.", w[2] * 100, w[3] * 100))
+      msg(string.format("Marcador puesto en %.1f, %.1f. Lo ves en el mapa (M) y, cuando estás en esa zona, también en pantalla.", w[2] * 100, w[3] * 100))
     end
     return
   end
@@ -1529,6 +1558,403 @@ nearestTurnIn = function(s)
     .. ((xp or 0) > 0 and (C.grey .. " +" .. fmtNum(xp) .. " XP" .. C.r) or "") .. "  " .. actionLink("go", best.id, "Ir")
 end
 
+-- ---------------------------------------------------------------- "Lo próximo" (Ahora)
+local dungeonQuestSet
+local function isDungeonQuest(id)
+  if not dungeonQuestSet then
+    dungeonQuestSet = {}
+    for _, ids in pairs(G.dungeonQuestIDs or {}) do for _, q in ipairs(ids) do dungeonQuestSet[q] = true end end
+  end
+  return id and dungeonQuestSet[id]
+end
+
+-- The dungeon in your range you are closest to having ready (most quests in your log or ready to take; ties go to
+-- the one with more in your log), and the quests for it you can take now, so the route and the advice agree.
+local function dungeonPrep(s, inLog)
+  local best
+  if not (G.dq and G.qdb and G.qdb.ready()) then return {} end
+  for _, d in ipairs(G.dungeons) do
+    if factionOk(d, s.faction) and s.level >= d.min - 1 and s.level <= d.max then
+      local have, take, boost = 0, 0, {}
+      for _, e in ipairs((G.dq.list(d))) do
+        if e.state == "log" then have = have + 1
+        elseif e.state == "take" then take = take + 1; boost[e.id] = true
+        elseif e.state == "chain" and e.steps and e.steps[1] and not inLog[e.steps[1]] then
+          local q = G.qdb.quests[e.steps[1]]
+          if q and (q.m or 1) <= s.level then take = take + 1; boost[e.steps[1]] = true end
+        end
+      end
+      local n = have + take
+      if n > 0 and (not best or n > best.have + best.take or (n == best.have + best.take and have > best.have)) then
+        best = { d = d, have = have, take = take, boost = boost }
+      end
+    end
+  end
+  return best and best.boost or {}, best
+end
+
+-- Next zone worth going to: the most value in quests to take there plus your own quests whose log header names it;
+-- a zone on another continent counts a bit less (boat or long flight).
+local function nextZone(s, boost, list)
+  local here = G.roadmap and G.roadmap.continent(s.mapID)
+  local zones = G.roadmap and G.roadmap.zones(boost) or {}
+  local byName = {}
+  for _, e in ipairs(list) do
+    if e.header and not e.complete and (e.tier or 5) <= 3 then byName[e.header] = (byName[e.header] or 0) + (e.xp or 1000) end
+  end
+  local best, bestValue
+  for i = 1, math.min(#zones, 12) do
+    local z = zones[i]
+    local info = C_Map and try(C_Map.GetMapInfo, z.mapID)
+    z.name = info and info.name or ("mapa " .. z.mapID)
+    local v = z.value + (byName[z.name] or 0)
+    if here and G.roadmap.continent(z.mapID) ~= here then v = v * 0.6 end
+    if z.mapID ~= s.mapID and (not bestValue or v > bestValue) then best, bestValue = z, v end
+  end
+  return best
+end
+
+local function maxQuests()
+  return (C_QuestLog and C_QuestLog.GetMaxNumQuestsCanAccept and try(C_QuestLog.GetMaxNumQuestsCanAccept)) or 20
+end
+
+-- Quests you skipped from the next-step bar: { [qid] = level }, left out of the plan until you level up.
+local function skippedQuests()
+  local c = charDB()
+  c.skipped = c.skipped or {}
+  return c.skipped
+end
+local function isSkipped(qid, level)
+  local l = qid and skippedQuests()[qid]
+  return l and l >= level
+end
+
+-- Groups points closer than ~6% of the map into one stop and picks up to 3 stops greedily by value per distance,
+-- starting where you stand (plan.px, plan.py).
+local function orderStops(plan, points)
+  local stops = {}
+  for _, pt in ipairs(points) do
+    local joined
+    for _, st in ipairs(stops) do
+      if math.sqrt((st.x - pt.x) ^ 2 + (st.y - pt.y) ^ 2) < 0.06 then joined = st; break end
+    end
+    if joined then joined.items[#joined.items + 1] = pt; joined.value = joined.value + pt.value
+    else stops[#stops + 1] = { x = pt.x, y = pt.y, value = pt.value, items = { pt } } end
+  end
+  local cx, cy = plan.px, plan.py
+  while cx and #stops > 0 and #plan.stops < 3 do
+    local bestI, bestScore
+    for i, st in ipairs(stops) do
+      local score = st.value / (math.sqrt((st.x - cx) ^ 2 + (st.y - cy) ^ 2) + 0.05)
+      if not bestScore or score > bestScore then bestI, bestScore = i, score end
+    end
+    local st = table.remove(stops, bestI)
+    st.fromX, st.fromY = cx, cy
+    plan.stops[#plan.stops + 1] = st
+    cx, cy = st.x, st.y
+  end
+end
+
+-- The plan while preparing one dungeon (G.dq.goal): only that dungeon's quests to take here and the chain steps in
+-- your log to finish first. plan.goal = { d, prep, away = { giver on another map, first one nearest }, ready }.
+local function dungeonPlan(s, plan, list, d)
+  local prep = G.dq.prepare(d)
+  local goal = { d = d, prep = prep, away = {} }
+  plan.goal, plan.boost = goal, {}
+  local points = {}
+  for _, e in ipairs(list) do
+    if e.id and prep.doing[e.id] then
+      e.objectives = questObjectives(e)
+      local open = false
+      for _, o in ipairs(e.objectives) do if not o.done then open = true end end
+      -- Done, or only "take this to someone" (a note, a letter): go to whoever receives it. With nothing left to do
+      -- and still not complete, the item to carry is missing (full bags when you took it, or thrown away): take the
+      -- quest again from its giver.
+      local missing = not e.complete and not open and #e.objectives == 0
+      local back = missing and G.dq.giver(e.id)
+      local to = (e.complete or not open) and not missing and G.dq.ender(e.id)
+      if back then
+        goal.away[#goal.away + 1] = { name = back.name, quest = e.id, retake = true, mapID = back.mapID,
+          x = back.x and back.x / 100, y = back.y and back.y / 100 }
+        to = true
+      elseif to and to.mapID == s.mapID and plan.px then
+        -- A copy marked complete, so the step reads "turn in" without touching the shared log entry.
+        points[#points + 1] = { x = to.x / 100, y = to.y / 100, value = 1500, e = setmetatable({ complete = true }, { __index = e }) }
+      elseif to then
+        goal.away[#goal.away + 1] = { name = to.name, quest = e.id, turnin = true, mapID = to.mapID, x = to.x / 100, y = to.y / 100,
+          far = G.roadmap and G.roadmap.continent(to.mapID) ~= G.roadmap.continent(s.mapID) }
+      end
+      local x, y
+      if not to then x, y = questPoint(e, s.mapID) end
+      if to then -- handled above
+      elseif x and plan.px then
+        local obj
+        for _, o in ipairs(e.objectives) do if not o.done then obj = o; break end end
+        points[#points + 1] = { x = x, y = y, value = 1500, e = e, obj = obj }
+      else
+        -- On another map: where the game says its next objective (or its turn-in) is.
+        local m, wx, wy
+        if C_QuestLog and C_QuestLog.GetNextWaypoint then m, wx, wy = try(C_QuestLog.GetNextWaypoint, e.id) end
+        if issecretvalue and wx and issecretvalue(wx) then m = nil end
+        local info = m and C_Map and try(C_Map.GetMapInfo, m)
+        goal.away[#goal.away + 1] = { name = m and (info and info.name or "?") or (e.title or "?"), quest = e.id, doing = true,
+          mapID = m and wx and m or nil, x = m and wx, y = m and wy }
+      end
+    end
+  end
+  local here = G.roadmap and G.roadmap.continent(s.mapID)
+  local byGiver = {}
+  for _, t in ipairs(prep.take) do
+    local g = t.giver
+    plan.boost[t.id] = true
+    do -- skips do not apply here: leaving out a step would break the chain
+      if g and g.mapID == s.mapID and g.x and plan.px then
+        local key = g.name .. g.x .. g.y
+        local pt = byGiver[key]
+        if pt then pt.g.quests[#pt.g.quests + 1] = t.id; pt.value = pt.value + 1000
+        else
+          pt = { x = g.x / 100, y = g.y / 100, value = 1000, g = { name = g.name, quests = { t.id } } }
+          byGiver[key] = pt
+          points[#points + 1] = pt
+        end
+      elseif g and g.mapID and g.x then
+        goal.away[#goal.away + 1] = { name = g.name, quest = t.id, mapID = g.mapID, x = g.x / 100, y = g.y / 100,
+          far = here and G.roadmap.continent(g.mapID) ~= here }
+      else
+        goal.away[#goal.away + 1] = { name = (g and g.text) or "?", quest = t.id }
+      end
+    end
+  end
+  -- Another map: same continent first, then the ones with a position.
+  table.sort(goal.away, function(a, b)
+    local ka = (a.mapID and 0 or 2) + (a.far and 1 or 0)
+    local kb = (b.mapID and 0 or 2) + (b.far and 1 or 0)
+    return ka < kb
+  end)
+  orderStops(plan, points)
+  goal.ready = #plan.stops == 0 and #goal.away == 0
+  return plan
+end
+
+-- The plan behind "Lo próximo" and the next-step bar (NextStep.lua), or nil when there is none (turned off, no quest
+-- data, inside an instance). Mixes what gives XP around you (turning in finished quests, the next objective of quests
+-- worth doing, picking up quests worth taking from Roadmap.lua), greedy by value per distance from where you stand,
+-- like the route on Misiones. { mapID, px, py (nil when the game hides your position), stops = { up to 3 { x, y,
+-- items = { { e, obj } or { g } } } }, zone (next zone, when fewer than 3 stops), prep (dungeon), boost, skip }.
+local function directPlan(s)
+  if DB.directMode == false or not (G.qdb and G.qdb.ready()) then return end
+  if IsInInstance and IsInInstance() then return end
+  local plan = { mapID = s.mapID, stops = {}, skip = {} }
+  local px, py = playerPoint(s.mapID)
+  plan.px, plan.py = px, py
+  local list = questEntries()
+  local goal = G.dq and G.dq.goal()
+  if goal then return dungeonPlan(s, plan, list, goal) end
+  local inLog = {}
+  for _, e in ipairs(list) do if e.id then inLog[e.id] = true end end
+  local boost, prep = dungeonPrep(s, inLog)
+  plan.boost, plan.prep = boost, prep
+  local points = {}
+  for _, e in ipairs(list) do
+    e.objectives = questObjectives(e)
+    e.summary, e.xp = questStatic(e)
+    local _, fdjDungeon = fdjQuest(e.id)
+    e.dungeon = fdjDungeon or (isDungeonQuest(e.id) and true) or nil
+    if inGroup() then e.mates = questMates(e) end
+    e.tier = questPlan(e, s, e.objectives, e.xp, e.dungeon)
+    if e.tier == 5 and not e.complete then plan.skip[#plan.skip + 1] = e.title or "?"
+    elseif px and (e.complete or e.tier <= 3) and not (isSkipped(e.id, s.level) and not e.complete) then
+      local x, y = questPoint(e, s.mapID)
+      if x then
+        local obj
+        for _, o in ipairs(e.objectives) do if not o.done then obj = o; break end end
+        points[#points + 1] = { x = x, y = y, value = (e.xp or 0) + (e.complete and 300 or 200), e = e, obj = obj }
+      end
+    end
+  end
+  if px and #list < maxQuests() and G.roadmap then
+    -- Taking a quest is only half the job: its value counts a bit less than doing or turning in.
+    for _, g in ipairs(G.roadmap.pickups(s.mapID, boost)) do
+      local keep = {}
+      for _, qid in ipairs(g.quests) do if not isSkipped(qid, s.level) then keep[#keep + 1] = qid end end
+      if #keep > 0 then
+        g.value = g.value * #keep / #g.quests
+        g.quests = keep
+        points[#points + 1] = { x = g.x, y = g.y, value = g.value * 0.6, g = g }
+      end
+    end
+  end
+  orderStops(plan, points)
+  if px and #plan.stops < 3 then plan.zone = nextZone(s, boost, list) end
+  return plan
+end
+
+-- What the first stop asks for, for the next-step bar: { kind = "turnin" | "kill" | "loot" | "do" | "take" | "travel",
+-- name, quests = { qid }, have, need, mapID, x, y, detail = { lines for the tooltip } }, or nil.
+local function firstStep(plan)
+  local st = plan and plan.stops[1]
+  local goal = plan and plan.goal
+  if not st and goal then
+    local d, p = goal.d, goal.prep
+    if goal.ready then
+      local lines = { p.have > 0 and ("Ya tenés todas las que se toman afuera: " .. p.have .. ".")
+        or "No quedan misiones para tomar afuera: podés ir igual por la XP y el botín.", "La entrada: " .. d.where .. "." }
+      if p.inside > 0 then lines[#lines + 1] = p.inside .. (p.inside == 1 and " empieza adentro (te la da un bicho o un objeto de ahí): no hace falta buscarla." or " empiezan adentro (te las da un bicho o un objeto de ahí): no hace falta buscarlas.") end
+      if p.later > 0 then lines[#lines + 1] = p.later .. " más recién cuando tengas más nivel." end
+      lines[#lines + 1] = "Antes de entrar, compartí las misiones con el grupo."
+      local e = d.enter
+      return { kind = "dungeon", name = "Andá a " .. d.name, quests = {}, detail = lines, goal = d, goalHave = p.have, goalWant = p.want,
+        mapID = e and e[1], x = e and e[2] / 100, y = e and e[3] / 100 }
+    end
+    local a = goal.away[1]
+    if a.retake then
+      local info = a.mapID and C_Map and try(C_Map.GetMapInfo, a.mapID)
+      return { goalHave = p.have, goalWant = p.want, kind = "take", name = "Volvé con " .. (a.name or "?"), quests = { a.quest },
+        mapID = a.mapID, x = a.x, y = a.y, goal = d, detail = {
+          "Te falta lo que hay que llevar en " .. G.dq.title(a.quest) .. " (una nota o un objeto): no está en tus bolsas. Si la guardaste en el banco, sacala y entregala; si no:",
+          "1. Abandoná la misión (L, elegila, Abandonar).",
+          "2. Hacé lugar en las bolsas.",
+          "3. Tomala de nuevo con " .. (a.name or "?") .. (info and (", " .. info.name) or "") .. ": te la vuelve a dar." } }
+    end
+    local lines = { "Para " .. d.name .. ": " .. ((a.turnin and ("entregá " .. G.dq.title(a.quest) .. " (está en tu registro; si te dieron una nota o carta, es para esta persona)"))
+      or (a.doing and ("terminá " .. G.dq.title(a.quest) .. " (está en tu registro)")) or ("tomá " .. G.dq.title(a.quest))) }
+    if a.doing then lines[#lines + 1] = "En " .. (a.name or "?")
+    elseif a.mapID then
+      local info = C_Map and try(C_Map.GetMapInfo, a.mapID)
+      lines[#lines + 1] = (a.name or "?") .. ", " .. (info and info.name or "?") .. (a.far and " (otro continente)" or "")
+    elseif a.name then lines[#lines + 1] = a.name end
+    if #goal.away > 1 then lines[#lines + 1] = "Después quedan " .. (#goal.away - 1) .. " más en otras zonas." end
+    return { goalHave = p.have, goalWant = p.want, kind = (a.turnin and "turnin") or (a.doing and "do") or "travel", name = (a.doing and G.dq.title(a.quest)) or a.name or "?", quests = { a.quest }, mapID = a.mapID, x = a.x, y = a.y, detail = lines, goal = d }
+  end
+  if not st then
+    local z = plan and plan.zone
+    if not z then return end
+    local lines = { z.n .. (z.n == 1 and " misión para tomar" or " misiones para tomar") .. ((z.dungeon or 0) > 0 and (" (" .. z.dungeon .. " de mazmorra)") or "") }
+    lines[#lines + 1] = "Empezá por " .. z.best.name .. "."
+    return { kind = "travel", name = z.name, quests = {}, mapID = z.mapID, x = z.best.x, y = z.best.y, detail = lines }
+  end
+  local turn, doing, take = {}, nil, nil
+  for _, it in ipairs(st.items) do
+    if it.g then take = take or it
+    elseif it.e.complete then turn[#turn + 1] = it
+    else doing = doing or it end
+  end
+  local step = { mapID = plan.mapID, x = st.x, y = st.y, quests = {}, detail = {} }
+  if #turn > 0 then
+    step.kind, step.name, step.x, step.y = "turnin", turn[1].e.title or "?", turn[1].x, turn[1].y
+    for _, it in ipairs(turn) do step.quests[#step.quests + 1] = it.e.id; step.detail[#step.detail + 1] = "Entregá: " .. (it.e.title or "?") end
+  elseif doing then
+    local o = doing.obj
+    step.name, step.quests, step.x, step.y = doing.e.title or "?", { doing.e.id }, doing.x, doing.y
+    step.kind = (o and o.type == "monster" and "kill") or (o and o.type == "item" and "loot") or "do"
+    if o then step.have, step.need = o.have, o.need; step.detail[#step.detail + 1] = o.text end
+    step.detail[#step.detail + 1] = doing.e.title or "?"
+  else
+    step.kind, step.name, step.quests, step.x, step.y = "take", take.g.name, take.g.quests, take.x, take.y
+    for _, qid in ipairs(take.g.quests) do
+      step.detail[#step.detail + 1] = "Tomá: " .. G.qdb.title(qid) .. ((plan.boost or {})[qid] and " (mazmorra)" or "")
+      local tip = G.questTakeTips and G.questTakeTips[qid]
+      if tip then step.detail[#step.detail + 1] = tip end
+    end
+  end
+  step.goal = goal and goal.d
+  if goal then step.goalHave, step.goalWant = goal.prep.have, goal.prep.want end
+  return step
+end
+
+-- "Lo próximo" on Ahora: the plan, one line per stop with [Ir], then the next zone, the dungeon to prepare and the
+-- quests in your log not worth keeping. Returns true when it showed something.
+buildDirect = function(s)
+  local plan = directPlan(s)
+  if not plan then return end
+  local boost, prep = plan.boost, plan.prep
+  local goal = plan.goal
+  H(goal and ("Preparando " .. goal.d.name) or "Lo próximo")
+  if goal then
+    local p = goal.prep
+    local parts = { C.green .. "tenés " .. p.have .. " de " .. p.want .. C.r }
+    if #p.take > 0 then parts[#parts + 1] = C.blue .. #p.take .. " para tomar" .. C.r end
+    if p.inside > 0 then parts[#parts + 1] = p.inside .. (p.inside == 1 and " empieza adentro" or " empiezan adentro") end
+    if p.later > 0 then parts[#parts + 1] = C.grey .. p.later .. " de más nivel" .. C.r end
+    if p.done > 0 then parts[#parts + 1] = C.grey .. p.done .. " hechas" .. C.r end
+    L(table.concat(parts, C.grey .. " · " .. C.r) .. "  " .. G.dq.goalLink(goal.d))
+  end
+  if not plan.px then
+    B(C.grey .. "El juego no da tu posición acá: usá [Ir] en la pestaña Misiones." .. C.r)
+    return true
+  end
+  local n = #plan.stops
+  for i, st in ipairs(plan.stops) do
+    waypoints[#waypoints + 1] = { s.mapID, st.x, st.y }
+    L(C.gold .. i .. "." .. C.r .. " " .. direction(st.fromX, st.fromY, st.x, st.y) .. "  " .. actionLink("wp", #waypoints, "Ir"))
+    local turnIn = {}
+    for _, it in ipairs(st.items) do
+      if it.g then
+        local names = {}
+        for _, qid in ipairs(it.g.quests) do
+          names[#names + 1] = G.qdb.title(qid) .. (boost[qid] and (C.grey .. " (mazmorra)" .. C.r) or "")
+        end
+        B(C.blue .. "Tomá" .. C.r .. " en " .. it.g.name .. ": " .. table.concat(names, ", "))
+      elseif it.e.complete then turnIn[#turnIn + 1] = it.e.title or "?"
+      else B(((it.obj and it.obj.text) or it.e.title or "?") .. C.grey .. " (" .. (it.e.title or "?") .. ")" .. C.r) end
+    end
+    if #turnIn > 0 then B(C.green .. "Entregá: " .. table.concat(turnIn, ", ") .. C.r) end
+  end
+  if goal then
+    for i, a in ipairs(goal.away) do
+      if i > 3 then B(C.grey .. "y " .. (#goal.away - 3) .. " más." .. C.r); break end
+      local info = a.mapID and not a.doing and C_Map and try(C_Map.GetMapInfo, a.mapID)
+      local where = info and (", " .. info.name) or ""
+      if a.mapID then waypoints[#waypoints + 1] = { a.mapID, a.x, a.y } end
+      if a.retake then
+        B(C.orange .. "Te falta el objeto de " .. G.dq.title(a.quest) .. C.r .. ": abandonala y tomala de nuevo con " .. (a.name or "?")
+          .. (info and (", " .. info.name) or "") .. (a.mapID and ("  " .. actionLink("wp", #waypoints, "Ir")) or ""))
+      else
+      B(((a.turnin and (C.green .. "Entregá" .. C.r)) or (a.doing and (C.orange .. "Terminá" .. C.r)) or (C.blue .. "Tomá" .. C.r)) .. " " .. G.dq.title(a.quest) .. C.grey .. " — " .. (a.name or "?") .. where .. C.r
+        .. (a.far and (C.orange .. " (otro continente)" .. C.r) or "") .. (a.mapID and ("  " .. actionLink("wp", #waypoints, "Ir")) or ""))
+      end
+    end
+    if goal.ready then
+      B(C.green .. "Ya tenés todas las que se toman afuera. Andá a " .. goal.d.name .. " (" .. goal.d.where .. ") y compartí las misiones con el grupo." .. C.r)
+      if goal.prep.inside > 0 then B(C.grey .. (goal.prep.inside == 1 and "1 más empieza adentro: te la da un bicho o un objeto de ahí." or (goal.prep.inside .. " más empiezan adentro: te las da un bicho o un objeto de ahí.")) .. C.r) end
+    end
+    return true
+  end
+  local z = plan.zone
+  if z then
+    local here, there, thereName = G.roadmap.continent(s.mapID), G.roadmap.continent(z.mapID)
+    waypoints[#waypoints + 1] = { z.mapID, z.best.x, z.best.y }
+    L(C.gold .. (n + 1) .. "." .. C.r .. " " .. (n == 0 and "Acá no queda nada que valga la pena: andá a " or "Después, andá a ")
+      .. C.gold .. z.name .. C.r .. (here and there and here ~= there and (C.orange .. " (otro continente: " .. (thereName or "?") .. ")" .. C.r) or "")
+      .. "  " .. actionLink("wp", #waypoints, "Ir"))
+    B(z.n .. (z.n == 1 and " misión para tomar" or " misiones para tomar")
+      .. ((z.dungeon or 0) > 0 and (" (" .. z.dungeon .. " de mazmorra)") or "") .. "; empezá por " .. z.best.name .. ".")
+  elseif n == 0 then
+    B(C.grey .. "No encontré misiones que valgan la pena para tu nivel: matá bichos de tu nivel o andá a una mazmorra." .. C.r)
+  end
+  if prep then
+    local d = prep.d
+    if prep.have >= 2 and inGroup() then
+      B(C.green .. d.name .. ": tienen " .. prep.have .. " misiones, vayan ya." .. C.r)
+    else
+      B(C.gold .. d.name .. C.r .. ": tenés " .. prep.have .. (prep.have == 1 and " misión" or " misiones")
+        .. (prep.take > 0 and (", " .. prep.take .. " para tomar") or "") .. ". Detalle en Guía > Mazmorras.")
+    end
+  end
+  local skip = plan.skip
+  if #skip > 0 then
+    B(C.grey .. "No valen la pena (podés abandonarlas): " .. table.concat(skip, ", ", 1, math.min(#skip, 3)) .. (#skip > 3 and (" y " .. (#skip - 3) .. " más") or "") .. C.r)
+  end
+  return true
+end
+
+-- For NextStep.lua: the first step of the plan, and skipping it (until you level up).
+nextStep = function() local ok, plan = pcall(directPlan, playerState()); return ok and firstStep(plan) or nil end
+skipStep = function(qids)
+  local level = UnitLevel("player") or 1
+  for _, qid in ipairs(qids or {}) do skippedQuests()[qid] = level end
+end
+
 local function buildGuide()
   H("Mazmorras")
   buildDungeons()
@@ -1833,6 +2259,8 @@ local function render()
   if not frame or not frame:IsShown() then return end
   local okH, errH = pcall(updateHeader)
   blocks, curBlock, foldKeys, skipping = {}, nil, {}, false
+  if G.dq then G.dq.clearLinks() end
+  waypoints = {}
   if not DB.tab or DB.tab > #BUILDERS then DB.tab = 1 end
   local ok, err = pcall(BUILDERS[DB.tab or 1])
   if not ok then blocks = {}; curBlock = nil; raw(C.red .. "Error en la guía: " .. tostring(err) .. C.r) end
@@ -2074,6 +2502,15 @@ local function createUI()
       with(flag("notifySound"), { label = "Sonido de los avisos", desc = "Suena cuando una misión queda lista." }),
       with(flag("roadmapPins"), { label = "Misiones para tomar en el mapa", desc = "Un \"!\" en el mapa grande donde hay misiones que ya podés aceptar. Pasá el mouse para verlas, clic para el camino.",
         after = function() if G.roadmap then G.roadmap.refreshPins() end end }),
+      with(optIn("nextBar"), { label = "Barra del próximo paso", desc = "Una barra con recuadro arriba de la pantalla: ícono de qué hacer, flecha, metros, progreso y » para saltar el paso. Apagada por defecto: la flecha en pantalla ya dice lo mismo. Arrastrala para moverla; también con /guia barra.",
+        after = function() if G.nextStep then G.nextStep.refresh() end end }),
+      with(flag("nextBarWaypoint"), { label = "Flecha en pantalla", desc = "Una flecha en el medio de la pantalla, con el nombre y los metros, que apunta al paso de la barra y a cualquier [Ir] que toques. No tapa los clics ni la cámara: mantené Shift y pasá el mouse para ver el detalle, o arrastrala para moverla. Apagada: [Ir] usa el marcador del juego. También con /guia flecha.",
+        after = function()
+          if not G.nextStep then return end
+          pcall(G.nextStep.quietNative)
+          if DB.nextBarWaypoint == false then G.nextStep.clearWaypoint() else G.nextStep.remark() end
+        end }),
+      with(flag("directMode"), { label = "Lo próximo", desc = "Arriba de Ahora: tus próximos 3 pasos en orden (entregar, hacer, tomar), sin las misiones que no valen la pena, y a qué zona ir cuando se termina esta. Se corrige solo con lo que ofrece el servidor." }),
       with(flag("routePlan"), { label = "Plan de ruta", desc = "Arriba de Misiones: qué hacer y en qué orden, por cercanía y XP." }),
       with(flag("questMarks"), { label = "Marca en bichos de misión", desc = "Espadita con tu progreso sobre la barra del bicho, para matarlo o porque suelta un objeto de tu misión. Con ThreatPlates también: mientras esté prendida, la Guía apaga el ícono de misión de ThreatPlates para que haya una sola marca.",
         after = function() if G.questMarks then G.questMarks.refresh() end end }),
@@ -2138,6 +2575,16 @@ local function createUI()
       with(subflag("bagMarks", "auction", true), { label = "$  para subastar", desc = "Vale más en la subasta.", after = bagRefresh }),
     } },
     { name = "Mazmorras", rows = {
+      { label = "Preparar mazmorra", desc = "Elegí una mazmorra que te falte: la flecha y Lo próximo te llevan solo a tomar sus misiones (y las que van antes), y cuando las tenés te dicen que vayas. Clic para pasar a la siguiente; también con [Preparar] en Ahora y en Guía > Mazmorras.",
+        value = function() local d = G.dq and G.dq.goal(); return d and d.name or "Ninguna (subir de nivel)" end,
+        click = function()
+          if not (G.dq and G.qdb and G.qdb.ready()) then return end
+          local list, cur, nextD = G.dq.candidates(), G.dq.goal(), nil
+          if not cur then nextD = list[1]
+          else for i, d in ipairs(list) do if d == cur then nextD = list[i + 1]; break end end end
+          G.dq.setGoal(nextD)
+        end,
+        reset = function() charDB().dungeonGoal = nil end },
       with(flag("dungeonCard"), { label = "Tarjeta de mazmorra", desc = "Jefes, misiones y botín para vos al entrar." }),
       with(flag("bossMsg"), { label = "Aviso de jefe derrotado", desc = "Texto en el centro de la pantalla." }),
       with(flag("runSummary"), { label = "Resumen al salir", desc = "Tiempo, XP, jefes y muertes en el chat." }),
@@ -2385,7 +2832,7 @@ ev:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
     local expected = { { "zones", "Data.lua" }, { "classes", "DataClasses.lua" }, { "professions", "DataProfessions.lua" },
       { "questGuides", "DataQuests.lua" }, { "itemUses", "DataItems.lua" },
       { "importantQuests", "DataImportant.lua" }, { "questDropDB", "DataQuestDrops.lua" }, { "cityPins", "DataCity.lua" }, { "notify", "Notify.lua" }, { "pvp", "PvP.lua" },
-      { "items", "Rewards.lua" }, { "meter", "Meter.lua" }, { "layerHop", "LayerHop.lua" }, { "dungeon", "Dungeon.lua" }, { "questMarks", "QuestMarks.lua" }, { "autoQuest", "AutoQuest.lua" },
+      { "items", "Rewards.lua" }, { "meter", "Meter.lua" }, { "layerHop", "LayerHop.lua" }, { "dungeon", "Dungeon.lua" }, { "dq", "DungeonQuests.lua" }, { "nextStep", "NextStep.lua" }, { "questMarks", "QuestMarks.lua" }, { "autoQuest", "AutoQuest.lua" },
       { "cityMap", "CityPins.lua" }, { "roadmap", "Roadmap.lua" }, { "companion", "Companion.lua" } }
     local missing = {}
     for _, e in ipairs(expected) do if G[e[1]] == nil then missing[#missing + 1] = e[2] end end
@@ -2464,6 +2911,7 @@ G.core = {
   questEntries = questEntries, questObjectives = questObjectives,
   sessionXP = function() return S.xp or 0 end, factionOk = factionOk, actionLink = actionLink,
   partyStats = function() return partyStats end,
+  nextStep = function() return nextStep and nextStep() end, skipStep = function(q) if skipStep then skipStep(q) end end,
 }
 
 local msg_ = msg
@@ -2476,6 +2924,8 @@ SlashCmdList.GUIAFOREVER = function(msg)
     msg_("Servicios en el mapa: " .. (DB.cityPins and "prendidos (abrí el mapa grande con M)" or "apagados") .. ".")
     return
   end
+  if msg == "barra" then if G.nextStep then G.nextStep.toggle() end; return end
+  if msg == "flecha" then if G.nextStep then G.nextStep.toggleWaypoint() end; return end
   if msg == "medidor" then if G.meter then G.meter.toggle() end; return end
   if msg == "marcas" then if G.questMarks then G.questMarks.diagnose() end; return end
   local qdbID = msg:match("^qdb%s*(%d*)$")
@@ -2498,7 +2948,7 @@ SlashCmdList.GUIAFOREVER = function(msg)
     local mapID = C_Map and try(C_Map.GetBestMapForUnit, "player")
     wx, wy = tonumber(wx), tonumber(wy)
     if wx and wy and G.setWaypoint(mapID, wx / 100, wy / 100) then
-      msg_("Marcador puesto en " .. wx .. ", " .. wy .. ". Seguí la flecha.")
+      msg_("Marcador puesto en " .. wx .. ", " .. wy .. ". Lo ves en el mapa (M) y, cuando estás en esa zona, también en pantalla.")
     end
     return
   end

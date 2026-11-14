@@ -168,7 +168,19 @@ local API_PROBE = {
   "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots", "UnitCharacterPoints", "GetUnspentTalentPoints",
   "C_ChatInfo.SendAddonMessage", "CombatLogGetCurrentEventInfo", "C_Map.GetWorldPosFromMapPos", "IsTradeskillTrainer",
   "GetNumSkillLines", "GetSkillLineInfo", "C_SpellBook.GetSpellBookItemInfo", "GetSpellTabInfo", "GetNumTalentTabs", "GetProfessions", "GetProfessionInfo", "C_SkillLine", "GetWeaponSkill",
+  "C_GossipInfo.GetAvailableQuests", "GetAvailableQuestInfo", "GetNumAvailableQuests", "GetQuestID", "GetRewardXP", "UnitGUID",
+  "C_QuestLog.GetMaxNumQuestsCanAccept", "IsInInstance",
 }
+
+-- Completed quests up to 5 levels over you, as "id,id,..." (lets "Lo próximo" be replayed outside the game).
+local function doneQuests()
+  local Q = G.qdb
+  if not (Q and Q.ready and Q.ready() and Q.done) then return nil end
+  local top, ids = (UnitLevel("player") or 1) + 5, {}
+  for qid, q in pairs(Q.quests) do if (q.l or 0) <= top and Q.done(qid) then ids[#ids + 1] = qid end end
+  table.sort(ids)
+  return table.concat(ids, ",")
+end
 local function probe()
   local r = {}
   for _, path in ipairs(API_PROBE) do
@@ -201,6 +213,8 @@ local function snapshot(reason)
     zone = GetZoneText(), subzone = GetSubZoneText(), pos = position("player"),
     hearth = GetBindLocation and GetBindLocation(), health = UnitHealthMax("player"),
     gear = gear, api = probe(), quests = quests(), skills = skills(), spells = spells(), bars = actionBars(), talents = talents(), group = group(),
+    dungeonQuests = G.dq and try(G.dq.report) or nil,
+    doneQuests = try(doneQuests),
     skillLines = GetNumSkillLines and try(GetNumSkillLines) or -1,
   }
 end

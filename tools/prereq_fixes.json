@@ -1,0 +1,7 @@
+{
+  "_doc": "Chains forever-db does not know yet, each checked against the quest text: quest id -> prerequisites (p) or optional breadcrumbs (b).",
+  "95809": { "p": [95647], "why": "Heartwoven starts from Ardin Grassman, whom Lost in the Thicket Things sends you to find" },
+  "95795": { "p": [95772], "why": "Fallen in the Fen starts from Daewyn Songblade, whom Songblade Search sends you to find" },
+  "98824": { "p": [95810], "why": "Prehistoric Prism follows Lost Relic Carry (the Titan Relic brought to Prospector Whelgar)" },
+  "95647": { "b": [95737], "why": "Seeking Caitlin (Llana, Astranaar) only points you to Caitlin Grassman" }
+}

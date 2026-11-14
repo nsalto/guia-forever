@@ -1,7 +1,7 @@
 -- Guía Forever: dungeon companion. While you are inside a dungeon, the "Ahora" tab shows its bosses
--- (killed / left), your quests for it, the ones you are missing and loot that suits your class.
--- When you leave, a short run summary. Dungeon, boss, quest and loot data come from
--- ForeverDungeonJournal (optional); boss kills from the client's encounter events.
+-- (killed / left), its quests (DungeonQuests.lua) and loot that suits your class.
+-- When you leave, a short run summary. Boss and loot data come from ForeverDungeonJournal (optional);
+-- boss kills from the client's encounter events.
 local G = GuiaForever
 G.dungeon = {}
 
@@ -59,16 +59,6 @@ local function bossKilled(boss)
   if not run then return false end
   for _, alias in ipairs(boss.aliases or { boss.name }) do if run.killed[alias] then return true end end
   return run.killed[boss.name] or false
-end
-
-local function questState(id)
-  for _, e in ipairs(G.core.questEntries()) do
-    if e.id == id then
-      local done, total = 0, 0
-      for _, o in ipairs(G.core.questObjectives(e)) do total = total + 1; if o.done then done = done + 1 end end
-      return e.complete and "lista" or (done .. "/" .. total)
-    end
-  end
 end
 
 local function fmtTime(sec)
@@ -143,10 +133,9 @@ table.insert(G.topSections, function(s)
     local data = run.key and f and f.DB and f.DB[run.key]
     core.H("Mazmorra: " .. (run.label or "?"))
     core.B(C.grey .. "Llevás " .. fmtTime(GetTime() - run.start) .. " · " .. (core.sessionXP() - run.xp) .. " XP · " .. run.deaths .. " muerte(s)" .. C.r)
-    if not data then
-      core.B(C.grey .. "Sin datos de esta mazmorra (instalá ForeverDungeonJournal para ver jefes y misiones)." .. C.r)
-      return
-    end
+    local here = G.dq and G.dq.current()
+    if here then G.dq.render(here, true) end
+    if not data then return end
     -- bosses
     local parts, killed = {}, 0
     for _, b in ipairs(data.bosses or {}) do
@@ -154,18 +143,6 @@ table.insert(G.topSections, function(s)
       else parts[#parts + 1] = b.name end
     end
     if #parts > 0 then core.B(C.gold .. "Jefes " .. killed .. "/" .. #parts .. ":" .. C.r .. " " .. table.concat(parts, C.grey .. " · " .. C.r)) end
-    -- quests
-    local missing = {}
-    for _, q in ipairs(data.quests or {}) do
-      if core.factionOk(q, s.faction) then
-        local st = q.id and questState(q.id)
-        if st then core.B((st == "lista" and C.green or "") .. "Misión " .. q.name .. ": " .. st .. C.r)
-        else missing[#missing + 1] = q end
-      end
-    end
-    for _, q in ipairs(missing) do
-      core.B(C.orange .. "Te falta: " .. q.name .. C.r .. C.grey .. (q.pickup and (" (se toma: " .. q.pickup .. ")") or "") .. C.r)
-    end
     -- loot for you, from bosses still alive
     local loot = {}
     for _, b in ipairs(data.bosses or {}) do

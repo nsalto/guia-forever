@@ -461,3 +461,11 @@ for _, q in ipairs(G.importantQuests) do
   G.importantIndex[q.id] = G.importantIndex[q.id] or q
   for _, id in ipairs(q.chain or {}) do G.importantIndex[id] = G.importantIndex[id] or q end
 end
+
+-- Quests that give no real leveling XP and never belong in "Lo próximo": cloth donations (reputation) and
+-- battleground quests. Battleground quests whose items only come from inside the battleground are also left out by
+-- Roadmap.lua's rule for objectives with no known source.
+G.notForLeveling = {}
+for _, id in ipairs({ 7791, 7792, 7793, 7794, 7795, 7796, 7798, 7799, 7800, 7801, 7802, 7803, 7804, 7805, 7806, 7807,
+  7808, 7809, 7811, 7812, 7813, 7814, 7817, 7818, 7819, 7820, 7821, 7822, 7823, 7824, 7825, 7826, 7827, 7831, 7832,
+  7833, 7834, 7835, 7836, 7837, 7081, 8105, 8120, 8166, 8167, 8168, 8169, 8170, 8171 }) do G.notForLeveling[id] = true end

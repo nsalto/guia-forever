@@ -19,7 +19,25 @@ that guides a player while leveling. In-game text is in Spanish (esMX); the deep
 Each section is drawn as a card with an accent color; quest objectives with counts show as progress bars.
 Every section title can be clicked to fold or unfold it; the choice is remembered.
 
-- **Ahora** — "Para hacer ya" (max 3 items: completed quests with the XP they give, new trainer abilities, unspent
+- **Ahora** — on top, "Lo próximo": your next 3 stops in order, each with an [Ir] waypoint. It mixes turning in
+  finished quests, the next objective of quests worth doing and picking up quests worth taking, ordered by value per
+  distance from where you stand. Left out: grey quests, quests more than 2 levels over you, dungeon quests for
+  dungeons you are not preparing, cloth donations, battleground quests, and quests whose items have no known source.
+  When the zone runs out it names the next zone (your continent first), then the dungeon you are closest to having
+  ready and the quests in your log not worth keeping. It corrects itself with the server: when a quest giver does not
+  offer a quest the data expected, that quest leaves the route until you level up, and the real reward XP shown in
+  the quest window is used for the ranking. Turn it off in Ajustes > Misiones.
+  The **next-step bar** shows only the first of those steps, with almost no text: an icon for what to do (take, turn
+  in, kill, loot, travel), an arrow that turns toward the target as you turn, the distance, a progress bar for counted
+  objectives and a short name (details in the tooltip). It sets the map waypoint on its own, moves to the next step
+  when you finish one (green flash and a sound), and "»" skips a step until you level up. Drag to move, right-click
+  opens the guide; `/guia barra` or Ajustes > Misiones turns it on or off. Hidden inside instances. The game's
+  arrow in the middle of the screen (ours: a gold arrow, the name and the meters, detail with Shift + mouse over; clicks go through it) follows the step and any [Ir]; `/guia flecha` or Ajustes turns it off. At a flight master, each flight point on the map shows how far it lands from that target, the closest one marked in green with a star.
+  **Preparing a dungeon:** [Preparar] next to a dungeon you still have quests for (Ahora, Guía > Mazmorras, or
+  Ajustes > Mazmorras > Preparar mazmorra). While it is set, the bar and "Lo próximo" only take you to that dungeon's
+  quests and the quests before them, here first and then on other maps; when you have them all the bar says
+  "¡Listo!" and where the entrance is. It ends when you walk into that dungeon, or with [Dejar].
+  Then "Para hacer ya" (max 3 items: completed quests with the XP they give, new trainer abilities, unspent
   talents, full bags, low durability, capped professions), "Tu ritmo" (XP/hour, time and kills to level, quest vs kill
   XP, gold/hour, time per level), "Cerca de vos" (PvP status, enemies you saw and enemies your party reported), zone fit, dungeons for your level,
   upcoming class abilities, one rotating tip.
@@ -99,6 +117,8 @@ Restart the game client after installing (a new addon folder is not picked up by
 ## Commands
 
 - `/guia` — show or hide the window
+- `/guia barra` — show or hide the next-step bar
+- `/guia flecha` — let the on-screen waypoint arrow follow the step, or not
 - `/guia meta 20` — level goal on Ahora: XP left, what your quest log covers, kills and time for the rest, zones (`/guia meta no` clears it)
 - `/guia ajustes` — settings panel (also the gear button in the header), by category (General, Misiones, PvP,
   Medidor, Objetos, Mazmorras): every feature has a switch with a one-line explanation, and each category can be
@@ -122,4 +142,4 @@ Restart the game client after installing (a new addon folder is not picked up by
 
 ## Licenses
 
-Third-party license notices are in `THIRD_PARTY_LICENSES.md`.
+Guía Forever is free software under the GNU General Public License version 3 (`LICENSE`). The quest database comes from forever-db, World of Warcraft: Forever data read from the game client (rebuild it with `tools/build_questdb.py`). Third-party license notices are in `THIRD_PARTY_LICENSES.md`.
