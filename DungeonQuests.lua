@@ -207,6 +207,9 @@ local function chain(qid, depth, seen)
   depth, seen = depth or 0, seen or {}
   if depth > 25 or seen[qid] or Q.done(qid) then return {} end
   seen[qid] = true
+  -- In your log: the server already let you take it, so whatever the data lists before it is not needed (a
+  -- breadcrumb, or another way in). Without this the guide kept asking for a quest you no longer need.
+  if inLog()[qid] then return { qid } end
   local q = dbQuest(qid)
   local pre = (q and q.p) or (ext[qid] and ext[qid].prereq) or nil
   local out = {}
@@ -351,8 +354,10 @@ function G.dq.prepare(d)
     elseif e.state == "take" then if take(e.id) then r.want = r.want + 1 end
     elseif e.state == "low" then r.later = r.later + 1
     elseif e.state == "chain" then
-      local first = e.steps[1]
-      if log[first] then r.doing[first] = true; r.want = r.want + 1
+      -- Every step already in your log is one to finish (two branches can both be needed).
+      local first, any = e.steps[1], false
+      for _, sid in ipairs(e.steps) do if log[sid] then r.doing[sid] = true; any = true end end
+      if any then r.want = r.want + 1
       else
         local _, m = levels(first)
         if (m or 1) > level then r.later = r.later + 1
