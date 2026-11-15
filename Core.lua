@@ -2776,15 +2776,17 @@ local function createUI()
 
   -- Minimap button: click opens/closes the guide, drag moves it around the minimap.
   if Minimap then
-    local mm = CreateFrame("Button", "GuiaForeverMinimapButton", Minimap)
+    -- A Frame, not a Button: minimap tools (Leatrix Plus) hide other addons' Buttons on the minimap and show a copy
+    -- only on mouse over; this one stays visible on a round or square minimap.
+    local mm = CreateFrame("Frame", "GuiaForeverMinimapButton", Minimap)
     minimapButton = mm
     mm:SetSize(31, 31); mm:SetFrameStrata("MEDIUM"); mm:SetFrameLevel(8)
-    mm:RegisterForClicks("AnyUp"); mm:RegisterForDrag("LeftButton")
+    mm:EnableMouse(true); mm:RegisterForDrag("LeftButton")
     local icon = mm:CreateTexture(nil, "BACKGROUND")
     icon:SetSize(20, 20); icon:SetPoint("CENTER", 0, 1); icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
     local border = mm:CreateTexture(nil, "OVERLAY")
     border:SetSize(53, 53); border:SetPoint("TOPLEFT"); border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    mm:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    local hl = mm:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(); hl:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"); hl:SetBlendMode("ADD")
     -- On the outer edge of the minimap, round or square (Leatrix Plus and others make it square: then the button
     -- slides along the square's border instead of ending up inside the map).
     local function place()
@@ -2810,8 +2812,12 @@ local function createUI()
         place()
       end)
     end)
-    mm:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
-    mm:SetScript("OnClick", function() SlashCmdList.GUIAFOREVER("") end)
+    local dragging = false
+    mm:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil); dragging = true end)
+    mm:SetScript("OnMouseUp", function(self, button)
+      if dragging then dragging = false; return end -- the end of a drag is not a click
+      if self:IsMouseOver() then SlashCmdList.GUIAFOREVER("") end
+    end)
     mm:SetScript("OnEnter", function(self)
       if GameTooltip then GameTooltip:SetOwner(self, "ANCHOR_LEFT"); GameTooltip:SetText("Guía Forever"); GameTooltip:AddLine("Clic: abrir/cerrar. Arrastrá para moverlo.", 1, 1, 1); GameTooltip:Show() end
     end)
