@@ -70,7 +70,8 @@ end
 local NEVER_GIVERS = { [211033] = true, [211022] = true }
 -- Quests the data has that Forever does not give, checked in game: the library book turn-ins of every bracket (they
 -- came with the client's leftovers), Argos Nightwhisper's (he cannot be talked to) and Collin Mauren's (not there).
-local NOT_IN_ROUTE = { [3765] = true, [1078] = true }
+-- 2358, 87318, 88757, 88758: Polestar's corrections take them out of the game data (not in Forever).
+local NOT_IN_ROUTE = { [3765] = true, [1078] = true, [2358] = true, [87318] = true, [88757] = true, [88758] = true }
 for _, r in ipairs({ { 78124, 78127 }, { 78142, 78150 }, { 79091, 79097 }, { 79535, 79536 }, { 79947, 79952 },
   { 81947, 81956 }, { 82208, 82208 }, { 84396, 84402 } }) do
   for id = r[1], r[2] do NOT_IN_ROUTE[id] = true end
@@ -81,11 +82,20 @@ local function professionQuest(qid)
   local t = Q.titleData and Q.titleData[qid]
   return type(t) == "string" and t:find("^Camping 101") ~= nil
 end
+-- Season of Discovery leftovers in the client: quest IDs 76000-89999 that only creatures 200000-239999 or objects
+-- 400000-449999 start (the rune and library NPCs). Forever's own quests and NPCs use other ranges.
+local function sodLeftover(qid, q)
+  if qid < 76000 or qid >= 90000 then return false end
+  for _, id in ipairs(q.s.u or {}) do if id < 200000 or id >= 240000 then return false end end
+  for _, id in ipairs(q.s.o or {}) do if id < 400000 or id >= 450000 then return false end end
+  return true
+end
 local function onlyNeverGivers(q)
   if q.s.o then return false end
   for _, id in ipairs(q.s.u or {}) do if not NEVER_GIVERS[id] then return false end end
   return true
 end
+local refusedBy -- defined with the learned data below
 local function hasGiver(q, qid, level)
   for _, kind in ipairs({ "u", "o" }) do
     for _, id in ipairs(q.s[kind] or {}) do if friendly(kind, id) and not refusedBy(kind, id, qid, level) then return true end end
@@ -104,7 +114,7 @@ local function learned()
   c.notOfferedBy = c.notOfferedBy or {} -- ["u123"] = { [qid] = level }: this giver did not offer it (others may)
   return c.notOffered, c.questXP, c.notOfferedBy
 end
-local function refusedBy(kind, id, qid, level)
+refusedBy = function(kind, id, qid, level)
   local _, _, by = learned()
   local l = by[kind .. id] and by[kind .. id][qid]
   return l and l >= level
@@ -147,7 +157,7 @@ local function computeAvailable()
   local function allowed(mask, id) return not mask or not id or math.floor(mask / 2 ^ (id - 1)) % 2 == 1 end
   for qid, q in pairs(Q.quests) do
     if q.s and (q.s.u or q.s.o) and not q.k and not q.v and (q.m or 1) <= level and (q.l or level) >= minL and (q.l or level) <= maxL
-      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q, qid, level) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] and not professionQuest(qid) then
+      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q, qid, level) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] and not professionQuest(qid) and not q.rep and not sodLeftover(qid, q) then
       if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x)) and not passed(qid, log)
         and not (notOffered[qid] and notOffered[qid] >= level) and not rep[qid] then out[qid] = q end
     end
