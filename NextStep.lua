@@ -437,10 +437,10 @@ local function mapPinUpdate()
   if not canvas then return end
   if not mapPin then
     mapPin = CreateFrame("Frame", nil, canvas)
-    mapPin:SetSize(28, 28)
+    mapPin:SetSize(16, 16)
     mapPin.glow = mapPin:CreateTexture(nil, "BACKGROUND")
     mapPin.glow:SetTexture("Interface\\Cooldown\\star4"); mapPin.glow:SetBlendMode("ADD")
-    mapPin.glow:SetVertexColor(0.3, 0.85, 1); mapPin.glow:SetSize(70, 70); mapPin.glow:SetPoint("CENTER")
+    mapPin.glow:SetVertexColor(0.3, 0.85, 1); mapPin.glow:SetSize(38, 38); mapPin.glow:SetPoint("CENTER")
     mapPin.icon = mapPin:CreateTexture(nil, "ARTWORK")
     mapPin.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_6"); mapPin.icon:SetAllPoints()
     local t0 = 0
@@ -449,7 +449,7 @@ local function mapPinUpdate()
       self.glow:SetRotation(t0 * 0.8)
       local a = 0.55 + 0.45 * math.abs(math.sin(t0 * 2.5))
       self.glow:SetAlpha(a)
-      self.glow:SetSize(60 + 16 * a, 60 + 16 * a)
+      self.glow:SetSize(32 + 8 * a, 32 + 8 * a)
     end)
   end
   local scale = 1 / ((WorldMapFrame.GetCanvasScale and WorldMapFrame:GetCanvasScale()) or 1)

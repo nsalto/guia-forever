@@ -3,7 +3,8 @@
 
 Usage: python3 tools/build_questdb.py <forever-db folder> tools/old_extras.tsv [out dir]
 
-tools/prereq_fixes.json adds chains forever-db does not know yet (quest id -> extra p / b).
+tools/prereq_fixes.json adds chains forever-db does not know yet (quest id -> extra p / b; "replace": true drops
+forever-db's own prerequisites for that quest first).
 
 forever-db (https://github.com/fitzforge/polestar/tree/main/forever-db, GPL-3.0) is read from the game client
 and open sources. Its spawn points are world yards; each one is stored as a percent of the smallest in-game map
@@ -60,6 +61,8 @@ def main():
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "prereq_fixes.json"), encoding="utf-8") as f:
         fixes = {int(k): v for k, v in json.load(f).items() if not k.startswith("_")}
     for qid, fx in fixes.items():
+        if fx.get("replace"):
+            prereqs[qid] = []
         for pre in fx.get("p", []):
             prereqs[qid].append({"mode": "any", "pre": pre, "quest": qid})
         for pre in fx.get("b", []):
