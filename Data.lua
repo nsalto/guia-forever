@@ -74,8 +74,8 @@ G.zonesByMap = {}
 for _, z in ipairs(G.zones) do if z.mapID then G.zonesByMap[z.mapID] = z end end
 
 -- key = name used by the DungeonJournal addon, so its quests can be shown here. enter = { uiMapID, x%, y% } of the
--- entrance on this client's map, for the arrow and [Ir a la entrada]. via = { uiMapID, x%, y%, name } where the path
--- to an entrance up a hill starts: the arrow points there first (G.dq.entrancePoint).
+-- entrance on this client's map, for the arrow and [Ir a la entrada]. via = { uiMapID, x%, y%, name } where the way
+-- to an entrance up a hill or inside a cave starts: the arrow points there first (G.dq.entrancePoint).
 G.dungeons = {
   { name = "Hall of Thanes", key = "Hall of Thanes", min = 13, max = 20, new = true, faction = "Alliance", where = "Debajo de Forjaz (Old Ironforge), Dun Morogh",
     howto = "Desde Costa Oscura: barco Auberdine -> Ventormenta, tranvía a Forjaz. Poné la piedra de hogar en la posada de Forjaz.",
@@ -89,18 +89,21 @@ G.dungeons = {
     } },
   { name = "Ragefire Chasm", min = 13, max = 18, faction = "Horde", where = "Orgrimmar" },
   { name = "Ruins of Lordaeron", key = "Ruins of Lordaeron", min = 15, max = 22, new = true, where = "Claros de Tirisfal (historia de la Horda, la Alianza puede entrar)" },
-  { name = "Wailing Caverns", key = "Wailing Caverns", min = 15, max = 24, where = "Los Baldíos (territorio Horda)" },
-  { name = "The Deadmines", key = "The Deadmines", min = 17, max = 26, faction = "Alliance", where = "Villa Luna, Páramos de Poniente",
+  { name = "Wailing Caverns", key = "Wailing Caverns", min = 15, max = 24, where = "Los Baldíos (territorio Horda)",
+    -- Portal: world -751.1, -2209.2 (inside the cave, lower than the mouth); the cave mouth is at the Lushwater Oasis.
+    enter = { 1413, 47.7, 35.0 }, via = { 1413, 46.0, 36.3, "la boca de la cueva, en el Oasis" },
+    howto = "Al suroeste del Cruce, en el Oasis Aguaverde (46.0, 36.3): entrá a la cueva de la colina y seguí bajando hasta el portal (47.7, 35.0). Desde la Alianza: volá a Trinquete y seguí el camino hacia el Cruce; el Oasis queda antes de llegar." },
+  { name = "The Deadmines", key = "The Deadmines", min = 17, max = 26, faction = "Alliance", where = "Villa Luna, Páramos de Poniente", enter = { 1436, 42.5, 71.7 },
     howto = "Ideal con tus amigos humanos: está al lado de Elwynn.", tips = { "Varias misiones salen de Colina del Centinela (Sentinel Hill)." } },
-  { name = "Shadowfang Keep", key = "Shadowfang Keep", min = 20, max = 30, where = "Bosque de Argénteos (territorio Horda)",
+  { name = "Shadowfang Keep", key = "Shadowfang Keep", min = 20, max = 30, where = "Bosque de Argénteos (territorio Horda)", enter = { 1421, 44.8, 67.8 },
     tips = { "La misión de arma de pícaro (Horn of Xelthos) pasa por acá." } },
-  { name = "Blackfathom Deeps", key = "Blackfathom Deeps", min = 24, max = 32, where = "Playa de Zoram, Vallefresno" },
+  { name = "Blackfathom Deeps", key = "Blackfathom Deeps", min = 24, max = 32, where = "Playa de Zoram, Vallefresno", enter = { 1440, 14.1, 13.9 } },
   { name = "The Stockade", min = 25, max = 29, faction = "Alliance", where = "Ventormenta" },
   { name = "Excavation Site: Wetlands", min = 26, max = 33, new = true, where = "Excavación de Whelgar, Los Humedales",
     enter = { 1437, 47.8, 56.3 }, via = { 1437, 53.9, 65.4, "la Piedra de Encuentro (Roca Thelgen)" },
     howto = "Volá a Puerto de Menethil (o a Thelsamar y cruzá Dun Algaz). La Piedra de Encuentro está en 53.9, 65.4, a la izquierda de la Roca Thelgen; desde ahí subí la montaña hasta el portal, arriba de la Excavación de Whelgar (47.8, 56.3)." },
   { name = "City of Dalaran", min = 28, max = 35, new = true, where = "Montañas de Alterac" },
-  { name = "Gnomeregan", min = 29, max = 38, where = "Dun Morogh" },
+  { name = "Gnomeregan", min = 29, max = 38, where = "Dun Morogh", enter = { 1426, 24.4, 39.8 } },
   { name = "Razorfen Kraul", min = 29, max = 38, where = "Los Baldíos" },
   { name = "Scarlet Monastery: Graveyard", min = 30, max = 38, where = "Claros de Tirisfal" },
   { name = "Scarlet Monastery: Library", min = 33, max = 41, where = "Claros de Tirisfal" },

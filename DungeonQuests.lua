@@ -380,13 +380,13 @@ G.linkHandlers.dqenter = function(n)
   local m, x, y, label, first = G.dq.entrancePoint(d)
   if m and G.setWaypoint(m, x, y, label) then
     if G.nextStep.followEntrance then G.nextStep.followEntrance(d) end
-    G.core.msg(first and ("La entrada de " .. d.name .. " está arriba de una montaña: la flecha te lleva primero a donde empieza el camino (" .. first .. ") y, cuando llegás, cambia sola a la entrada. En el maestro de grifos ves qué vuelo te deja más cerca.")
+    G.core.msg(first and ("A la entrada de " .. d.name .. " no se llega en línea recta: la flecha te lleva primero a donde empieza el camino (" .. first .. ") y, cuando llegás, cambia sola a la entrada. En el maestro de grifos ves qué vuelo te deja más cerca.")
       or ("Marcador en la entrada de " .. d.name .. ". La flecha te lleva; en el maestro de grifos ves qué vuelo te deja más cerca."))
   end
 end
 
 -- Where to walk for a dungeon's entrance: mapID, x, y (0-1), label, and the path start's name while it points there.
--- With d.via (the entrance is up a hill that walking straight at would run into rock), the path start comes first;
+-- With d.via (the entrance is up a hill or deep in a cave, so walking straight at it runs into rock), the path start comes first;
 -- once you have been within 40 m of it, or are within 50 m of the entrance, the entrance itself (remembered until
 -- /reload).
 local onPath = {}

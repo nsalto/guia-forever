@@ -1812,7 +1812,7 @@ local function firstStep(plan)
       if p.later > 0 then lines[#lines + 1] = p.later .. " más recién cuando tengas más nivel." end
       lines[#lines + 1] = "Antes de entrar, compartí las misiones con el grupo."
       local m, x, y, _, first = G.dq.entrancePoint(d)
-      if first then table.insert(lines, 2, "La entrada está arriba de una montaña: no vayas en línea recta. La flecha te lleva primero a " .. first .. ", donde empieza el camino, y después cambia sola a la entrada.") end
+      if first then table.insert(lines, 2, "No vayas en línea recta a la entrada: la flecha te lleva primero a " .. first .. ", donde empieza el camino, y después cambia sola a la entrada.") end
       return { kind = "dungeon", name = "Andá a " .. d.name, quests = {}, detail = lines, goal = d, goalHave = p.have, goalWant = p.want,
         mapID = m, x = x, y = y }
     end
