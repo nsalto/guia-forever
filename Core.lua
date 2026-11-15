@@ -364,9 +364,46 @@ local function lowestDurability()
   return low
 end
 
--- Forever has no UnitCharacterPoints/GetUnspentTalentPoints: estimate from points spent per tree
--- (first point at level 10). The "Talented" Legacy perk gives points earlier, so this can under-count.
+-- Talents in Forever use the modern trait system (C_ClassTalents + C_Traits): one tree per class.
+-- read() returns { unspent = n, spent = n, nodes = { { spell, name, rank, max, x, y } ... } } or nil.
+G.talents = {}
+function G.talents.raw()
+  local CT, TR = C_ClassTalents, C_Traits
+  if not (CT and TR and CT.GetActiveConfigID and TR.GetConfigInfo) then return nil end
+  local cfg = try(CT.GetActiveConfigID)
+  local info = cfg and try(TR.GetConfigInfo, cfg)
+  local tree = info and info.treeIDs and info.treeIDs[1]
+  if not tree then return nil end
+  local out = { unspent = 0, spent = 0, nodes = {} }
+  local cur = TR.GetTreeCurrencyInfo and try(TR.GetTreeCurrencyInfo, cfg, tree, false)
+  if type(cur) == "table" and cur[1] then
+    out.unspent = tonumber(cur[1].quantity) or 0
+    out.spent = tonumber(cur[1].spent) or 0
+  end
+  for _, nodeID in ipairs((TR.GetTreeNodes and try(TR.GetTreeNodes, tree)) or {}) do
+    local n = try(TR.GetNodeInfo, cfg, nodeID)
+    if n and n.ID and n.ID ~= 0 then
+      local entry = (n.activeEntry and n.activeEntry.entryID) or (n.entryIDs and n.entryIDs[1])
+      local e = entry and try(TR.GetEntryInfo, cfg, entry)
+      local d = e and e.definitionID and try(TR.GetDefinitionInfo, e.definitionID)
+      local spell = d and (d.spellID or d.overriddenSpellID)
+      local name = d and d.overrideName
+      if spell and not name then
+        name = (C_Spell and C_Spell.GetSpellName and try(C_Spell.GetSpellName, spell)) or (GetSpellInfo and try(GetSpellInfo, spell))
+      end
+      out.nodes[#out.nodes + 1] = { node = nodeID, spell = spell, name = name, rank = plain(n.currentRank) or plain(n.activeRank) or 0, can = n.canPurchaseRank,
+        max = plain(n.maxRanks) or 0, x = plain(n.posX), y = plain(n.posY), sub = n.subTreeID }
+    end
+  end
+  return out
+end
+function G.talents.read() local ok, r = pcall(G.talents.raw); return ok and r or nil end
+
+-- Points not spent: the trait currency first; older clients' APIs, then an estimate from points spent per tree
+-- (first point at level 10) as fallbacks. The "Talented" Legacy perk gives points earlier, so the estimate can under-count.
 local function unspentTalents()
+  local t = G.talents.read()
+  if t and t.unspent then return t.unspent end
   local pts = UnitCharacterPoints and try(UnitCharacterPoints, "player")
   if not pts and GetUnspentTalentPoints then pts = try(GetUnspentTalentPoints) end
   if pts then return tonumber(pts) end
@@ -669,6 +706,7 @@ end
 local function buildProfessions()
   local s = playerState()
   local known = 0
+  if G.gather and G.gather.active() then G.gather.render(L, B, G.core.actionLink, C); L("") end
   for _, p in ipairs(G.professions) do
     local sk = s.skills[p.name] or (p.alias and s.skills[p.alias])
     if sk then
@@ -682,6 +720,7 @@ local function buildProfessions()
           B(C.blue .. b.from .. "-" .. b.to .. ":" .. C.r .. " " .. b.text)
         end
       end
+      if G.gather then G.gather.recipeLines(p.name, sk.rank, B, G.core.actionLink, C) end
       each(p.tips, B)
     end
   end
@@ -2229,7 +2268,45 @@ local BTN = {
   danger = { bg = { 0.55, 0.13, 0.13, 0.95 }, hover = { 0.72, 0.18, 0.18, 1 }, edge = { 0.97, 0.44, 0.44, 0.9 }, text = { 1, 1, 1 } },
 }
 local BTN_H, BTN_GAP = 18, 4
-local PRIMARY_KINDS = { go = true, wp = true, dq = true, dqenter = true, ruta = true }
+
+-- The guide's button inside the game's own windows (talents, professions...). One look everywhere so it reads as
+-- ours: the guide's book icon on the left, primary blue with a light-blue edge, a short verb as the label. With
+-- `on` true it turns quiet (dark) to show the guide is acting on that window. b:SetLabel(text), b:SetOn(bool).
+G.ui = G.ui or {}
+function G.ui.button(parent, label, onClick, tipTitle, tipText)
+  local b = CreateFrame("Button", nil, parent)
+  b:SetHeight(22)
+  b:SetFrameStrata("HIGH")
+  b.edge = b:CreateTexture(nil, "BACKGROUND"); b.edge:SetAllPoints()
+  b.bg = b:CreateTexture(nil, "BORDER"); b.bg:SetPoint("TOPLEFT", 1, -1); b.bg:SetPoint("BOTTOMRIGHT", -1, 1)
+  b.icon = b:CreateTexture(nil, "ARTWORK"); b.icon:SetSize(16, 16); b.icon:SetPoint("LEFT", 4, 0)
+  b.icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09"); b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); b.text:SetPoint("LEFT", b.icon, "RIGHT", 5, 0)
+  local function paint()
+    local t = b.on and BTN.secondary or BTN.primary
+    local c = b:IsMouseOver() and t.hover or t.bg
+    if b.on then b.bg:SetColorTexture(0.1, 0.1, 0.12, b:IsMouseOver() and 1 or 0.92) else b.bg:SetColorTexture(c[1], c[2], c[3], c[4]) end
+    b.edge:SetColorTexture(t.edge[1], t.edge[2], t.edge[3], t.edge[4])
+    b.text:SetTextColor(t.text[1], t.text[2], t.text[3])
+  end
+  function b:SetLabel(text) self.text:SetText(text); self:SetWidth(self.text:GetStringWidth() + 34) end
+  function b:SetOn(v) self.on = v and true or nil; paint() end
+  b:SetScript("OnEnter", function(self)
+    paint()
+    if tipTitle then
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:AddLine("Guía Forever: " .. tipTitle, 1, 0.82, 0)
+      if tipText then GameTooltip:AddLine(tipText, 1, 1, 1, true) end
+      GameTooltip:Show()
+    end
+  end)
+  b:SetScript("OnLeave", function() paint(); GameTooltip:Hide() end)
+  b:SetScript("OnClick", function(self) if onClick then onClick(self) end end)
+  b:SetLabel(label)
+  paint()
+  return b
+end
+local PRIMARY_KINDS = { go = true, wp = true, dq = true, dqenter = true, ruta = true, gat = true, gatr = true }
 
 -- Our action links in a line ("|Hguiaf:kind:id|h[label]|h", fold links excepted) come out as buttons: returns the text
 -- without them and { { link, label, variant }, ... }.
@@ -3159,6 +3236,8 @@ SlashCmdList.GUIAFOREVER = function(msg)
     render()
     return
   end
+  local want = msg:match("^conseguir%s+(.+)$")
+  if want then if G.gather then G.gather.command(want) end; return end
   if msg == "foto" then if G.companion then G.companion.snapshot() end; return end
   if msg:match("^capa") then if G.layerHop then G.layerHop.command(msg:match("^capa%s*(.*)$") or "") end; return end
   if msg == "sos" then if G.pvp and G.pvp.sos then G.pvp.sos() end; return end

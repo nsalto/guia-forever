@@ -12,6 +12,7 @@ DataImportant.lua
 DataQuestDrops.lua
 DataCity.lua
 DataRecipes.lua
+DataGather.lua
 DataQuestDB.lua
 DataDungeonQuests.lua
 Core.lua
@@ -30,3 +31,5 @@ Nameplates.lua
 AutoQuest.lua
 CityPins.lua
 Companion.lua
+Talents.lua
+Gather.lua

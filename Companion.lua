@@ -129,6 +129,15 @@ local function actionBars()
 end
 
 local function talents()
+  local t = G.talents and G.talents.read()
+  if t then
+    local picked = {}
+    for _, n in ipairs(t.nodes) do
+      picked[#picked + 1] = string.format("%s %d/%d @%s,%s spell=%s node=%s", n.name or "?", n.rank or 0, n.max or 0,
+        tostring(n.x), tostring(n.y), tostring(n.spell), tostring(n.node))
+    end
+    return { unspent = t.unspent, spent = t.spent, nodes = picked }
+  end
   if not GetNumTalentTabs then return nil end
   local tabs = {}
   for t = 1, GetNumTalentTabs() do
@@ -212,7 +221,7 @@ local function snapshot(reason)
     gold = math.floor((GetMoney() or 0) / 10000), copperTotal = GetMoney(),
     zone = GetZoneText(), subzone = GetSubZoneText(), pos = position("player"),
     hearth = GetBindLocation and GetBindLocation(), health = UnitHealthMax("player"),
-    gear = gear, api = probe(), quests = quests(), skills = skills(), spells = spells(), bars = actionBars(), talents = talents(), group = group(),
+    gear = gear, api = probe(), quests = quests(), skills = skills(), spells = spells(), bars = actionBars(), talents = try(talents), group = group(),
     dungeonQuests = G.dq and try(G.dq.report) or nil,
     doneQuests = try(doneQuests),
     skillLines = GetNumSkillLines and try(GetNumSkillLines) or -1,

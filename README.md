@@ -100,8 +100,19 @@ Every section title can be clicked to fold or unfold it; the choice is remembere
   in 8 s, a link asks for an invite in General chat. Helping others is on by default (only when you are solo, out of
   combat and outside instances; turn it off in Ajustes > PvP or with `/guia capa ayudar`). `/guia capa cancelar` stops. `/guia capa prueba` lists the Guía users online, their zone and layer, and why each one can or
   cannot help (also shown automatically when nobody offers).
+- **Talent suggestions** (`Talents.lua`) — a "Sugerir talentos" button in the talent window. It reads your tree
+  (C_Traits), works out the spec you are building and your weapon, then glows the talents to take now (numbered, in
+  order), greys the next ones, marks wasted points in red and lists why in a small panel. Only marks; it never spends.
+  Rogue data for now. Unspent points also show in Pendientes with the exact count.
+- **Get reagents** (`Gather.lua`, data in `DataGather.lua` from `tools/build_gather.py`) — pick a recipe ("Conseguir
+  ingredientes" in the profession window, [Conseguir] in Guía > Profesiones, or `/guia conseguir <name>`) and the
+  guide counts what you miss (bags and bank, crafted reagents broken down), finds the closest place that has most of
+  it (creatures of your level, herb and ore nodes, containers), orders the stops by distance and points the arrow;
+  vendor items send you to the supply vendor by the profession trainer; leather and fish get a note.
+- **Guide buttons in game windows** — one shared button (`G.ui.button` in `Core.lua`): book icon, primary blue,
+  a short verb. Used in the talent and profession windows.
 - **Character snapshot** (`Companion.lua`) — on `/reload`, logout and `/guia foto`
-  writes level, zone, gear, quests, professions, spellbook, action bars with their keys and group to the
+  writes level, zone, gear, quests, professions, spellbook, action bars with their keys, talents and group to the
   `GuiaForeverSnapshot` saved variable, so a tool outside the game can read it. Read-only.
 - **Party** — quest progress shared over `PARTY` / `INSTANCE_CHAT`, "share all missing quests" action.
 
@@ -132,6 +143,7 @@ Restart the game client after installing (a new addon folder is not picked up by
 - `/guia sos` — ask your party for help; `/guia ir X Y` — waypoint at map coordinates (`/guia ir` alone: last SOS); `/guia rival` — mark target as rival; `/guia capa` — change layer
 - `/guia pvp` — toggle enemy alerts; `/guia pvp sonido | compartir | limpiar | nombres`
 - `/guia ciudad` — toggle the town and city map pins
+- `/guia conseguir <receta>` — where to get the reagents of a recipe (part of the name is enough)
 - `/guia marcas` — quest mob marks diagnostics (target a mob first)
 - `/guia qdb [questID]` — what the quest database knows about a quest, and which navigation APIs this client has
 
@@ -139,9 +151,9 @@ Restart the game client after installing (a new addon folder is not picked up by
 
 - Reads only the player's own state through the standard API; it never acts in the game.
 - Optional integration: ForeverDungeonJournal (dungeon quest data, quest-giver coordinates).
-- Guide data lives in `Data.lua`, `DataClasses.lua` and `DataProfessions.lua`; generated data in `DataQuestDrops.lua`
-  (including `DataRecipes.lua` and `DataQuestDB.lua`).
+- Guide data lives in `Data.lua`, `DataClasses.lua` and `DataProfessions.lua`; generated data in `DataQuestDrops.lua`,
+  `DataRecipes.lua`, `DataQuestDB.lua` and `DataGather.lua`.
 
 ## Licenses
 
-Guía Forever is free software under the GNU General Public License version 3 (`LICENSE`). The quest database comes from forever-db, World of Warcraft: Forever data read from the game client (rebuild it with `tools/build_questdb.py`). Third-party license notices are in `THIRD_PARTY_LICENSES.md`.
+Guía Forever is free software under the GNU General Public License version 3 (`LICENSE`). The quest database comes from forever-db, World of Warcraft: Forever data read from the game client (rebuild it with `tools/build_questdb.py`; reagent sources with `tools/build_gather.py`). Third-party license notices are in `THIRD_PARTY_LICENSES.md`.
