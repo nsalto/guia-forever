@@ -340,7 +340,11 @@ function G.dq.prepare(d)
   local r = { take = {}, doing = {}, have = 0, inside = 0, later = 0, done = 0, total = 0, want = 0 }
   local seen = {}
   -- Returns false when it starts inside the dungeon.
+  local skipped = G.core and G.core.charDB and G.core.charDB()
   local function take(qid)
+    -- Skipped from the bar, or a giver that did not offer it: not part of the preparation until you level up.
+    local sk = skipped and ((skipped.skipped or {})[qid] or (skipped.notOffered or {})[qid])
+    if sk and sk >= level then return false end
     local g = giver(qid)
     if g and (g.inside or g.item) then if not seen[qid] then r.inside = r.inside + 1 end; seen[qid] = true; return false end
     if not seen[qid] then r.take[#r.take + 1] = { id = qid, giver = g } end

@@ -381,7 +381,7 @@ function G.nextStep.refresh()
   else
     bar.progress:Hide()
   end
-  bar.skip:SetShown(#s.quests > 0 and not s.goal)
+  bar.skip:SetShown(#s.quests > 0 and (not s.goal or s.kind == "take"))
   bar:Show()
 end
 

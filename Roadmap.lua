@@ -80,9 +80,9 @@ local function onlyNeverGivers(q)
   for _, id in ipairs(q.s.u or {}) do if not NEVER_GIVERS[id] then return false end end
   return true
 end
-local function hasGiver(q)
+local function hasGiver(q, qid, level)
   for _, kind in ipairs({ "u", "o" }) do
-    for _, id in ipairs(q.s[kind] or {}) do if friendly(kind, id) then return true end end
+    for _, id in ipairs(q.s[kind] or {}) do if friendly(kind, id) and not refusedBy(kind, id, qid, level) then return true end end
   end
   return false
 end
@@ -92,10 +92,16 @@ end
 -- (with your level then) and left out until you level up. The XP the server shows for an offered quest is kept too.
 local function learned()
   local c = G.core and G.core.charDB and G.core.charDB()
-  if not c then return {}, {} end
+  if not c then return {}, {}, {} end
   c.notOffered = c.notOffered or {}
   c.questXP = c.questXP or {}
-  return c.notOffered, c.questXP
+  c.notOfferedBy = c.notOfferedBy or {} -- ["u123"] = { [qid] = level }: this giver did not offer it (others may)
+  return c.notOffered, c.questXP, c.notOfferedBy
+end
+local function refusedBy(kind, id, qid, level)
+  local _, _, by = learned()
+  local l = by[kind .. id] and by[kind .. id][qid]
+  return l and l >= level
 end
 -- Quests the server offers again after you turn them in (repeatable in Forever, not in the data): left out of the route.
 local function repeats()
@@ -116,6 +122,12 @@ function G.roadmap.skipQuests(list)
   cache = nil
 end
 
+-- A quest whose follow-up you already did or have: you are past it (a breadcrumb, or a step the server skipped).
+local function passed(qid, log)
+  for _, nxt in ipairs(Q.unlocks(qid)) do if log[nxt] or Q.done(nxt) then return true end end
+  return false
+end
+
 -- { [qid] = q } for every quest you could accept now. Prerequisites mean "any one of these done".
 -- World-event quests (Darkmoon Faire, holidays) and profession quests are left out.
 local function computeAvailable()
@@ -129,8 +141,8 @@ local function computeAvailable()
   local function allowed(mask, id) return not mask or not id or math.floor(mask / 2 ^ (id - 1)) % 2 == 1 end
   for qid, q in pairs(Q.quests) do
     if q.s and (q.s.u or q.s.o) and not q.k and not q.v and (q.m or 1) <= level and (q.l or level) >= minL and (q.l or level) <= maxL
-      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] then
-      if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x))
+      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q, qid, level) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] then
+      if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x)) and not passed(qid, log)
         and not (notOffered[qid] and notOffered[qid] >= level) and not rep[qid] then out[qid] = q end
     end
   end
@@ -152,7 +164,7 @@ local function giversOn(mapID, list)
   for qid, q in pairs(list) do
     for _, kind in ipairs({ "u", "o" }) do
       for _, id in ipairs(q.s[kind] or {}) do
-        local pos = friendly(kind, id) and Q.positions(kind, id, mapID)[1]
+        local pos = friendly(kind, id) and not refusedBy(kind, id, qid, UnitLevel("player") or 1) and Q.positions(kind, id, mapID)[1]
         if pos then
           local key = kind .. id
           local g = by[key]
@@ -489,7 +501,10 @@ local function learn(event, given)
   for qid in pairs(offered) do if notOffered[qid] then notOffered[qid], changed = nil, true end end
   -- Quests near grey can be hidden by the "low level quests" tracking option: those are never counted as missing.
   -- Only quests this giver alone starts are judged (another giver may still offer the rest).
-  local floor = level - greyBelow(level) + 2
+  -- Quests near grey count only when the window offered something else: an empty window may just be the "low level
+  -- quests" tracking option hiding them. A quest other givers also start is only crossed off for this giver.
+  local floor = next(offered) and 0 or (level - greyBelow(level) + 2)
+  local _, _, by = learned()
   local missing = {}
   for qid, q in pairs(available()) do
     if not offered[qid] and (q.l or level) >= floor then
@@ -499,7 +514,8 @@ local function learn(event, given)
           if friendly(k, sid) then givers = givers + 1; if k == kind and sid == id then mine = true end end
         end
       end
-      if mine and givers == 1 then notOffered[qid] = level; missing[#missing + 1] = Q.title(qid); changed = true end
+      if mine and givers == 1 then notOffered[qid] = level; missing[#missing + 1] = Q.title(qid); changed = true
+      elseif mine then by[kind .. id] = by[kind .. id] or {}; by[kind .. id][qid] = level; changed = true end
     end
   end
   if #missing > 0 and G.core then
