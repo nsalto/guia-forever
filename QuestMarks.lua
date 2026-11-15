@@ -177,6 +177,9 @@ local function questProgress(unit)
   end
   if text == nil then text = fromObjectives(unit) end
   local kind = "kill"
+  -- The tooltip and the "related to a quest" check also flag mobs you only loot (scales, fangs...): when the mob's
+  -- name is in no objective and it is known to drop an item you still need, it is a drop mob, not a kill target.
+  if text and not fromObjectives(unit) and (fromQuestDB(unit) ~= nil or fromDrops(unit) ~= nil) then kind = "drop" end
   if text == nil then text = fromQuestDB(unit); if text ~= nil then kind = "drop" end end
   if text == nil then text = fromDrops(unit); if text ~= nil then kind = "drop" end end
   if text == nil and tipDone then text = false end
@@ -316,7 +319,10 @@ end
 
 -- The game's own "interact" icons: a hand/bag over lootable corpses and over objects you can use
 -- (ground quest objects included). Only on clients that have these settings.
-local LOOT_CVARS = { SoftTargetIconGameObject = "1", SoftTargetIconInteract = "1", SoftTargetInteract = "3" }
+-- Arc 2 = all around you (not only in front); range 15 yd; the nameplate on the object is what our sparkle hangs from.
+local LOOT_CVARS = { SoftTargetIconGameObject = "1", SoftTargetIconInteract = "1", SoftTargetInteract = "3",
+  SoftTargetInteractArc = "2", SoftTargetInteractRange = "15", SoftTargetNameplateInteract = "1" }
+local LOOT_OFF = { SoftTargetInteractArc = "0", SoftTargetInteractRange = "10" } -- the game's defaults when turned off
 local function cvarExists(name)
   if C_CVar and C_CVar.GetCVar then return C_CVar.GetCVar(name) ~= nil end
   return GetCVar and GetCVar(name) ~= nil
@@ -380,10 +386,47 @@ local function applyLootIcons()
     if cvarExists(name) then
       supported = true
       if on then pcall(SetCVar, name, value)
-      elseif name ~= "SoftTargetInteract" then pcall(SetCVar, name, "0") end
+      elseif name ~= "SoftTargetInteract" then pcall(SetCVar, name, LOOT_OFF[name] or "0") end
     end
   end
   return supported
+end
+
+-- Sparkle on usable objects (quest objects, chests, herbs...): the game gives the object you can use right now a
+-- nameplate (SoftTargetNameplateInteract); we hang a soft gold glow with two slowly turning stars on it. Mobs and
+-- players never get it. Nothing shows on clients that give objects no nameplate.
+local sparkles = {}
+local function sparkleFor(plate)
+  if sparkles[plate] then return sparkles[plate] end
+  local ok, f = pcall(CreateFrame, "Frame", nil, plate)
+  if not ok or not f then return end
+  f:SetSize(64, 64); f:SetPoint("CENTER", plate, "CENTER", 0, 0)
+  f:SetFrameLevel((plate:GetFrameLevel() or 0) + 6)
+  local function star(size, alpha, dir, secs)
+    local t = f:CreateTexture(nil, "OVERLAY")
+    t:SetTexture("Interface\\Cooldown\\star4"); t:SetBlendMode("ADD")
+    t:SetVertexColor(1, 0.85, 0.35, alpha); t:SetSize(size, size); t:SetPoint("CENTER")
+    local g = t:CreateAnimationGroup(); g:SetLooping("REPEAT")
+    local r = g:CreateAnimation("Rotation"); r:SetDegrees(360 * dir); r:SetDuration(secs)
+    g:Play()
+    return t
+  end
+  star(60, 0.55, 1, 6); star(38, 0.8, -1, 4)
+  local pulse = f:CreateAnimationGroup(); pulse:SetLooping("BOUNCE")
+  local a = pulse:CreateAnimation("Alpha"); a:SetFromAlpha(1); a:SetToAlpha(0.35); a:SetDuration(0.9)
+  pulse:Play()
+  sparkles[plate] = f
+  return f
+end
+local function sparkleUpdate(unit, removed)
+  local plate = C_NamePlate and try(C_NamePlate.GetNamePlateForUnit, unit)
+  if not plate then return end
+  local d = db()
+  local guid = not removed and plain(UnitGUID(unit))
+  local object = type(guid) == "string" and guid:find("^GameObject") ~= nil
+  if object and d and d.lootIcons ~= false and d.objectSparkle ~= false then
+    local f = sparkleFor(plate); if f then f:Show() end
+  elseif sparkles[plate] then sparkles[plate]:Hide() end
 end
 
 -- Kill reminder: your target just died and it may carry an item a quest of yours needs.
@@ -511,8 +554,9 @@ f:SetScript("OnEvent", function(_, event, unit)
   if event == "UNIT_HEALTH" and unit == "target" then pcall(checkTargetDeath); return end
   if event == "UNIT_HEALTH" then return end
   if event == "PLAYER_ENTERING_WORLD" then pcall(applyLootIcons); pcall(syncThreatPlates); return end
-  if event == "NAME_PLATE_UNIT_ADDED" then safeUpdate(unit)
+  if event == "NAME_PLATE_UNIT_ADDED" then safeUpdate(unit); pcall(sparkleUpdate, unit)
   elseif event == "NAME_PLATE_UNIT_REMOVED" then
+    pcall(sparkleUpdate, unit, true)
     local plate = C_NamePlate and try(C_NamePlate.GetNamePlateForUnit, unit)
     if plate and marks[plate] then marks[plate]:Hide() end
   else

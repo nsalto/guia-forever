@@ -44,6 +44,7 @@ local function playerWorld()
   if not x then return end
   return world(mapID, x, y)
 end
+G.nextStep.world, G.nextStep.playerWorld = world, playerWorld
 
 -- Border: gold while preparing a dungeon, grey otherwise; a short green flash when a step is done.
 local flashing = false
@@ -349,6 +350,8 @@ function G.nextStep.refresh()
         if center then center:Show() end
       end
     end
+  elseif wantArrow and s.kind == "dungeon" and s.x and target and target.fromStep and (target.x ~= s.x or target.y ~= s.y) then
+    mark() -- the dungeon's entrance leg changed (path start reached): same step, new point
   end
   if center then
     local count = (s.need and s.need > 1) and ((s.have or 0) .. "/" .. s.need) or ""
@@ -408,7 +411,14 @@ ev:SetScript("OnUpdate", function(_, elapsed)
   if tick < 2 then return end
   tick = 0
   if on() or autoMark() then pcall(G.nextStep.refresh) end
+  -- An [Ir a la entrada] marker moves from the path start to the entrance once you get there.
+  local d = target and target.entrance
+  if d and G.dq and G.dq.entrancePoint then
+    local m, x, y, label = G.dq.entrancePoint(d)
+    if m and (x ~= target.x or y ~= target.y) and G.setWaypoint(m, x, y, label) and target then target.entrance = d end
+  end
 end)
+function G.nextStep.followEntrance(d) if target then target.entrance = d end end
 local pending = false
 ev:SetScript("OnEvent", function()
   -- Many quest events come together: one refresh on the next frame.

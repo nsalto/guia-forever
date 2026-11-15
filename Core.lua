@@ -150,12 +150,13 @@ local function isFolded(key)
   if v == nil then v = foldDefaults[key] or false end
   return v
 end
-local function H(text, closedByDefault, color)
+-- extra: text after the fold link (other links, like [Preparar]), shown even when the card is closed.
+local function H(text, closedByDefault, color, extra)
   local key = sectionKey(text)
   if closedByDefault then foldDefaults[key] = true end
   local folded = isFolded(key)
   foldKeys[#foldKeys + 1] = key
-  newBlock("|Hguiaf:fold:" .. #foldKeys .. "|h" .. (folded and FOLD_CLOSED or FOLD_OPEN) .. " " .. iconFor(text) .. text .. "|h", key, color)
+  newBlock("|Hguiaf:fold:" .. #foldKeys .. "|h" .. (folded and FOLD_CLOSED or FOLD_OPEN) .. " " .. iconFor(text) .. text .. "|h" .. (extra or ""), key, color)
   curBlock.folded = folded
   skipping = folded
 end
@@ -613,7 +614,7 @@ end
 
 local function buildDungeons()
   local s = playerState()
-  L(C.grey .. "Verde = tu nivel. Tocá una para abrirla. Las misiones de mazmorra dan casi toda la XP: agarralas antes de entrar." .. C.r)
+  L(C.grey .. "Verde = tu nivel (ya abiertas). Tocá el nombre de otra para abrirla. Las misiones de mazmorra dan casi toda la XP: agarralas antes de entrar." .. C.r)
   L(C.grey .. "Detalle de jefes y botín: /dj (DungeonJournal)." .. C.r)
   -- One card per dungeon, closed by default (the one you are preparing starts open). The title says how many of its
   -- quests you have done, so a closed card is enough to decide.
@@ -641,18 +642,23 @@ local function buildDungeons()
           end
         end
       end
-      if goal == d then tail = tail .. C.gold .. "  ★ preparando" .. C.r end
-      H(col .. d.name .. (col ~= "" and C.r or "") .. "  (" .. d.min .. "-" .. d.max .. ")" .. (d.new and (C.orange .. " NUEVA" .. C.r) or "") .. tail, goal ~= d)
-      local link = ready and G.dq.goalLink(d) or ""
+      -- Cards for your level (green) and the one you prepare start open; the rest closed.
+      H(col .. d.name .. (col ~= "" and C.r or "") .. "  (" .. d.min .. "-" .. d.max .. ")" .. (d.new and (C.orange .. " NUEVA" .. C.r) or "") .. tail, goal ~= d and not fits, nil,
+        ready and G.dq.goalLink(d) or nil) -- [Preparar] / ★ preparando [Dejar] on the title, visible while closed
+      local link = ""
       local enter = ""
       if d.enter then
         for i, x in ipairs(G.dungeons) do if x == d then enter = " " .. G.core.actionLink("dqenter", i, "Ir a la entrada") end end
       end
       L("  " .. C.grey .. d.where .. C.r .. enter .. link)
       if near then
-        if d.howto then B(d.howto) end
-        each(d.tips, B)
+        -- What to do (the quests) first; how to get there and tips after, in grey.
         if G.dq then G.dq.render(d) end
+        if d.howto or (d.tips and #d.tips > 0) then
+          L(C.gold .. "  Cómo llegar" .. C.r)
+          if d.howto then B(C.grey .. d.howto .. C.r) end
+          each(d.tips, function(t) B(C.grey .. t .. C.r) end)
+        end
       end
     end
   end
@@ -1095,7 +1101,10 @@ end
 -- ---------------------------------------------------------------- clickable actions
 -- Links inside the text: |Hguiaf:go:<questID>|h[Ir]|h  and  |Hguiaf:share:<questID>|h[Compartir]|h
 local waypoints = {} -- coordinates referenced by [Ir] links in walkthrough steps (rebuilt every render)
+-- Links that move the arrow ([Ir], [Ir a la entrada]) are green with a » so they stand out from the text around them.
+local GO_LINKS = { go = true, wp = true, dq = true, dqenter = true }
 local function actionLink(kind, id, label, color)
+  if GO_LINKS[kind] and not color then return "|cff4ade80|Hguiaf:" .. kind .. ":" .. id .. "|h[» " .. label .. "]|h|r" end
   return (color or "|cff7dd3fc") .. "|Hguiaf:" .. kind .. ":" .. id .. "|h[ " .. label .. " ]|h|r"
 end
 
@@ -1802,9 +1811,10 @@ local function firstStep(plan)
       if p.inside > 0 then lines[#lines + 1] = p.inside .. (p.inside == 1 and " empieza adentro (te la da un bicho o un objeto de ahí): no hace falta buscarla." or " empiezan adentro (te las da un bicho o un objeto de ahí): no hace falta buscarlas.") end
       if p.later > 0 then lines[#lines + 1] = p.later .. " más recién cuando tengas más nivel." end
       lines[#lines + 1] = "Antes de entrar, compartí las misiones con el grupo."
-      local e = d.enter
+      local m, x, y, _, first = G.dq.entrancePoint(d)
+      if first then table.insert(lines, 2, "La entrada está arriba de una montaña: no vayas en línea recta. La flecha te lleva primero a " .. first .. ", donde empieza el camino, y después cambia sola a la entrada.") end
       return { kind = "dungeon", name = "Andá a " .. d.name, quests = {}, detail = lines, goal = d, goalHave = p.have, goalWant = p.want,
-        mapID = e and e[1], x = e and e[2] / 100, y = e and e[3] / 100 }
+        mapID = m, x = x, y = y }
     end
     local a = goal.away[1]
     if a.retake then
@@ -2123,8 +2133,11 @@ end
 updateToggles = function()
   if not pvpToggle then return end
   local on = G.pvp and G.pvp.isOn()
+  local function fit(b, text) b.label:SetText(text); b:SetWidth(math.floor((b.label:GetStringWidth() or 30) + 10)) end
+  fit(pvpToggle, "PvP: " .. (on and "sí" or "no"))
   pvpToggle.label:SetTextColor(on and 0.29 or 0.5, on and 0.87 or 0.5, on and 0.5 or 0.5)
   local m = G.notify and G.notify.mode()
+  fit(notifyToggle, "Avisos: " .. (({ listas = "listas", todo = "todo", no = "no" })[m] or "?"))
   notifyToggle.label:SetTextColor(m == "no" and 0.5 or 0.29, m == "no" and 0.5 or 0.87, m == "no" and 0.5 or 0.5)
 end
 
@@ -2196,7 +2209,9 @@ layoutBlocks = function()
   local cc = RAID_CLASS_COLORS and class and RAID_CLASS_COLORS[class]
   if cc then cr, cg, cb = cc.r, cc.g, cc.b end
   local y = -2
-  local onlyFirst, drawn = DB.size == "small", 0
+  -- "Small" shrinks only the Ahora tab to its next step; the other tabs are lists, and their first card alone is
+  -- just the intro text.
+  local onlyFirst, drawn = DB.size == "small" and (DB.tab or 1) == 1, 0
   for _, b in ipairs(blocks) do
     if onlyFirst and drawn > 0 then break end
     -- trim blank lines at the edges of the card
@@ -2266,7 +2281,7 @@ local function render()
   if not ok then blocks = {}; curBlock = nil; raw(C.red .. "Error en la guía: " .. tostring(err) .. C.r) end
   layoutBlocks()
   if DB.size == "small" and scroll and frame:GetTop() and scroll:GetTop() then
-    local want = math.floor((frame:GetTop() - scroll:GetTop()) + content:GetHeight() + 30)
+    local want = (DB.tab or 1) == 1 and math.floor((frame:GetTop() - scroll:GetTop()) + content:GetHeight() + 30) or (DB.h or 420)
     if want ~= smallHeight then smallHeight = math.max(90, math.min(want, DB.h or 420)); applySize() end
   end
   for i, b in ipairs(tabButtons) do
@@ -2289,10 +2304,13 @@ local function cycleSpec()
   render()
 end
 
--- Window size: "big" (everything), "small" (header, tabs and only the first card), "hide" (header only).
+-- Window size: "big" (everything), "small" (header, tabs and, on the Ahora tab, only the first card), "hide" (header only).
 local SIZE_NEXT = { big = "small", small = "hide", hide = "big" }
-local SIZE_LABEL = { big = "–", small = "=", hide = "+" }
-local SIZE_TIP = { big = "Grande: todo. Clic: chica.", small = "Chica: solo la primera tarjeta. Clic: oculta.", hide = "Oculta: solo el encabezado. Clic: grande." }
+-- The button says what a click does (not the current size): Achicar -> Ocultar -> Agrandar.
+local SIZE_LABEL = { big = "Achicar", small = "Ocultar", hide = "Agrandar" }
+local SIZE_TIP = { big = "Ventana grande: todo.\nClic: chica (en Ahora, solo el próximo paso).", small = "Ventana chica: en Ahora, solo el próximo paso (las otras pestañas se ven enteras).\nClic: ocultar (solo el encabezado).", hide = "Ventana oculta: solo el encabezado.\nClic: verla grande." }
+local SIZE_MSG = { small = "Ventana chica: la pestaña Ahora muestra solo el próximo paso; las otras se ven enteras. El botón «Ocultar» la deja solo con el encabezado.",
+  hide = "Ventana oculta: solo el encabezado. Tocá «Agrandar» para verla entera." }
 local function sizeMode()
   local m = DB.size
   if not SIZE_NEXT[m] then m = DB.collapsed and "hide" or "big" end
@@ -2352,7 +2370,7 @@ local function createUI()
   classIcon:SetSize(24, 24); classIcon:SetPoint("LEFT", 6, 0)
   nameText = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   nameText:SetPoint("TOPLEFT", classIcon, "TOPRIGHT", 7, -1)
-  nameText:SetPoint("RIGHT", header, "RIGHT", -140, 0); nameText:SetJustifyH("LEFT"); nameText:SetWordWrap(false)
+  nameText:SetJustifyH("LEFT"); nameText:SetWordWrap(false)
   subText = header:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   local sub = subText
   sub:SetPoint("BOTTOMLEFT", classIcon, "BOTTOMRIGHT", 7, 0)
@@ -2361,12 +2379,14 @@ local function createUI()
   local close = CreateFrame("Button", nil, header, "UIPanelCloseButton")
   close:SetPoint("RIGHT", -2, 0); close:SetSize(24, 24)
   close:SetScript("OnClick", function() frame:Hide(); DB.hidden = true end)
-  local mini = flatButton(header, "–", 18, 16)
+  local mini = flatButton(header, "Achicar", 46, 16)
   mini:SetPoint("RIGHT", close, "LEFT", -2, 0)
-  mini.label:SetText(SIZE_LABEL[sizeMode()])
+  local function sizeLabel() mini.label:SetText(SIZE_LABEL[sizeMode()]); mini:SetWidth(math.floor((mini.label:GetStringWidth() or 36) + 10)) end
+  sizeLabel()
   mini:SetScript("OnClick", function(self)
     DB.size = SIZE_NEXT[sizeMode()]; applySize(); render()
-    self.label:SetText(SIZE_LABEL[DB.size])
+    sizeLabel()
+    if SIZE_MSG[DB.size] then msg(SIZE_MSG[DB.size]) end
     if GameTooltip:IsOwned(self) then GameTooltip:SetText(SIZE_TIP[DB.size], 1, 1, 1, 1, true) end
   end)
   mini:HookScript("OnEnter", function(self)
@@ -2404,6 +2424,9 @@ local function createUI()
   gear:SetScript("OnClick", function() if settingsPanel then settingsPanel:SetShown(not settingsPanel:IsShown()); if settingsPanel.refresh then settingsPanel.refresh() end end end)
   gear:SetScript("OnEnter", function(self) if GameTooltip then GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:SetText("Ajustes"); GameTooltip:Show() end end)
   gear:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  -- Name and stats line end before the buttons (which change width with their state).
+  nameText:SetPoint("RIGHT", gear, "LEFT", -6, 0)
+  sub:SetPoint("RIGHT", gear, "LEFT", -6, 0); sub:SetJustifyH("LEFT"); sub:SetWordWrap(false)
 
   -- XP bar with rested overlay.
   restBar = CreateFrame("StatusBar", nil, frame)
@@ -2494,6 +2517,16 @@ local function createUI()
       { label = "Opacidad del fondo", desc = "Qué tan transparente es la ventana.", value = function() return math.floor((DB.alpha or 0.9) * 100 + 0.5) .. "%" end,
         step = function(d) DB.alpha = math.max(0.2, math.min(1, (DB.alpha or 0.9) + d * 0.1)); frame:SetBackdropColor(0.06, 0.06, 0.08, DB.alpha) end,
         reset = function() DB.alpha = nil; frame:SetBackdropColor(0.06, 0.06, 0.08, 0.9) end },
+      with(flag("chatTidy"), { label = "Ordenar el chat al entrar", desc = "Si el Registro de combate queda encima del chat General (los dos transparentes y el texto mezclado), lo vuelve a poner como pestaña al lado de General y deja General elegido.",
+        after = function() if G.tidyChat then G.tidyChat() end end }),
+    } },
+    { name = "Bichos", rows = {
+      with(flag("plateDebuffs"), { label = "Tus debuffs en los bichos", desc = "Al lado de la barra de cada enemigo, los íconos de lo que le pusiste vos (desangrar, venenos, maldiciones...) con los segundos que le quedan; en rojo los últimos 10. Se ven con las barras de nombre prendidas (tecla V).",
+        after = function() if G.plates then G.plates.refresh() end end }),
+      with(flag("plateAggro"), { label = "Borde rojo si te pega a vos", desc = "La barra del bicho se marca en rojo cuando te está atacando a vos (en grupo: cuando tenés su amenaza). Sirve para ver cuántos se te vinieron.",
+        after = function() if G.plates then G.plates.refresh() end end }),
+      with(flag("plateHealth"), { label = "Vida en % sobre la barra", desc = "El porcentaje de vida que le queda a cada enemigo herido.",
+        after = function() if G.plates then G.plates.refresh() end end }),
     } },
     { name = "Misiones", rows = {
       { label = "Avisos de misión", desc = "Qué te avisa en el centro de la pantalla.", value = function() return NOTIFY_LABEL[G.notify and G.notify.mode() or "listas"] end,
@@ -2514,8 +2547,9 @@ local function createUI()
       with(flag("routePlan"), { label = "Plan de ruta", desc = "Arriba de Misiones: qué hacer y en qué orden, por cercanía y XP." }),
       with(flag("questMarks"), { label = "Marca en bichos de misión", desc = "Espadita con tu progreso sobre la barra del bicho, para matarlo o porque suelta un objeto de tu misión. Con ThreatPlates también: mientras esté prendida, la Guía apaga el ícono de misión de ThreatPlates para que haya una sola marca.",
         after = function() if G.questMarks then G.questMarks.refresh() end end }),
-      with(flag("lootIcons"), { label = "Íconos de saqueo", desc = "Mano o bolsa del juego sobre cadáveres y objetos que se pueden levantar.",
+      with(flag("lootIcons"), { label = "Íconos de saqueo", desc = "Mano o bolsa del juego sobre cadáveres y objetos que se pueden levantar, todo alrededor tuyo (no solo adelante) y hasta 15 metros.",
         after = function() if G.questMarks then G.questMarks.applyLootIcons() end end }),
+      with(flag("objectSparkle"), { label = "Brillo en objetos para usar", desc = "Un brillo dorado con destellos sobre el objeto que podés usar más cerca (objetos de misión, cofres, hierbas...), además del ícono del juego. Necesita los íconos de saqueo prendidos." }),
       with(flag("lootGlow"), { label = "Marco en la ventana de saqueo", desc = "Borde dorado en el objeto que pide tu misión." }),
       with({ get = function() return DB.lootReminder == true end, set = function(v) DB.lootReminder = v end, default = false },
         { label = "Aviso para saquear", desc = "Al matar un bicho que suelta un objeto de tu misión (según la tabla de botín, con su %). Apagado: no suma nada a la pantalla." }),
@@ -2751,9 +2785,20 @@ local function createUI()
     local border = mm:CreateTexture(nil, "OVERLAY")
     border:SetSize(53, 53); border:SetPoint("TOPLEFT"); border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     mm:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    -- On the outer edge of the minimap, round or square (Leatrix Plus and others make it square: then the button
+    -- slides along the square's border instead of ending up inside the map).
     local function place()
       local a = math.rad(DB.minimapAngle or 200)
-      mm:ClearAllPoints(); mm:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * 80, math.sin(a) * 80)
+      local r = ((Minimap:GetWidth() or 140) / 2) + 8
+      local x, y = math.cos(a), math.sin(a)
+      local shape = GetMinimapShape and try(GetMinimapShape)
+      if shape == "SQUARE" then
+        local d = math.sqrt(2 * r * r)
+        x, y = math.max(-r, math.min(x * d, r)), math.max(-r, math.min(y * d, r))
+      else
+        x, y = x * r, y * r
+      end
+      mm:ClearAllPoints(); mm:SetPoint("CENTER", Minimap, "CENTER", x, y)
     end
     place()
     mm:SetScript("OnDragStart", function(self)
@@ -2772,6 +2817,13 @@ local function createUI()
     end)
     mm:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     if DB.minimapHidden then mm:Hide() end
+    if C_Timer then C_Timer.After(2, place) end -- after other addons reshape the minimap
+  end
+  -- Also in the game's addon menu on the minimap (the compartment button), where it exists.
+  if AddonCompartmentFrame and AddonCompartmentFrame.RegisterAddon and not G.compartment then
+    G.compartment = true
+    pcall(AddonCompartmentFrame.RegisterAddon, AddonCompartmentFrame, { text = "Guía Forever", icon = "Interface\\Icons\\INV_Misc_Book_09",
+      notCheckable = true, func = function() SlashCmdList.GUIAFOREVER("") end })
   end
   applySize()
   if DB.hidden then frame:Hide() end
@@ -2976,4 +3028,29 @@ SlashCmdList.GUIAFOREVER = function(msg)
     if frame:IsShown() then frame:Hide(); DB.hidden = true else frame:Show(); DB.hidden = false end
   end
   render()
+end
+
+-- The game's Combat Log is a second chat window (ChatFrame2). When it ends up floating over the General chat, or
+-- docked but drawn at the same time, both are see-through and the text mixes. Out of combat, put it back as a tab
+-- next to General and select General. Only the game's own chat functions are used; nothing is replaced.
+function G.tidyChat()
+  if not DB or DB.chatTidy == false or (InCombatLockdown and InCombatLockdown()) then return end
+  local cl, general = _G.COMBATLOG or _G.ChatFrame2, _G.ChatFrame1
+  if not (cl and general and FCF_DockFrame) then return end
+  local docked = cl.isDocked and true or false
+  if GENERAL_CHAT_DOCK and FCFDock_GetChatFrames then
+    local list = try(FCFDock_GetChatFrames, GENERAL_CHAT_DOCK) or {}
+    docked = false
+    for _, f in ipairs(list) do if f == cl then docked = true end end
+    if not docked then pcall(FCF_DockFrame, cl, #list + 1, false) end
+  elseif not docked then
+    pcall(FCF_DockFrame, cl, nil, false)
+  end
+  if FCF_SelectDockFrame then pcall(FCF_SelectDockFrame, general) end
+end
+do
+  local f = CreateFrame("Frame")
+  f:RegisterEvent("PLAYER_ENTERING_WORLD")
+  -- After the game has restored the chat layout.
+  f:SetScript("OnEvent", function() if C_Timer then C_Timer.After(3, function() pcall(G.tidyChat) end) end end)
 end

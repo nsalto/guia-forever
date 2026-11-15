@@ -74,7 +74,8 @@ G.zonesByMap = {}
 for _, z in ipairs(G.zones) do if z.mapID then G.zonesByMap[z.mapID] = z end end
 
 -- key = name used by the DungeonJournal addon, so its quests can be shown here. enter = { uiMapID, x%, y% } of the
--- entrance on this client's map, for the arrow and [Ir a la entrada].
+-- entrance on this client's map, for the arrow and [Ir a la entrada]. via = { uiMapID, x%, y%, name } where the path
+-- to an entrance up a hill starts: the arrow points there first (G.dq.entrancePoint).
 G.dungeons = {
   { name = "Hall of Thanes", key = "Hall of Thanes", min = 13, max = 20, new = true, faction = "Alliance", where = "Debajo de Forjaz (Old Ironforge), Dun Morogh",
     howto = "Desde Costa Oscura: barco Auberdine -> Ventormenta, tranvía a Forjaz. Poné la piedra de hogar en la posada de Forjaz.",
@@ -96,7 +97,7 @@ G.dungeons = {
   { name = "Blackfathom Deeps", key = "Blackfathom Deeps", min = 24, max = 32, where = "Playa de Zoram, Vallefresno" },
   { name = "The Stockade", min = 25, max = 29, faction = "Alliance", where = "Ventormenta" },
   { name = "Excavation Site: Wetlands", min = 26, max = 33, new = true, where = "Excavación de Whelgar, Los Humedales",
-    enter = { 1437, 47.8, 56.3 },
+    enter = { 1437, 47.8, 56.3 }, via = { 1437, 53.9, 65.4, "la Piedra de Encuentro (Roca Thelgen)" },
     howto = "Volá a Puerto de Menethil (o a Thelsamar y cruzá Dun Algaz). La Piedra de Encuentro está en 53.9, 65.4, a la izquierda de la Roca Thelgen; desde ahí subí la montaña hasta el portal, arriba de la Excavación de Whelgar (47.8, 56.3)." },
   { name = "City of Dalaran", min = 28, max = 35, new = true, where = "Montañas de Alterac" },
   { name = "Gnomeregan", min = 29, max = 38, where = "Dun Morogh" },

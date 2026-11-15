@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Guía Forever
 ## Notes: Guía contextual para WoW Forever: qué hacer según tu nivel, zona, clase y profesiones. /guia
-## Version: 1.4.1
+## Version: 1.5.0
 ## SavedVariables: GuiaForeverDB, GuiaForeverSnapshot
 Data.lua
 DataClasses.lua
@@ -26,6 +26,7 @@ Dungeon.lua
 DungeonQuests.lua
 NextStep.lua
 QuestMarks.lua
+Nameplates.lua
 AutoQuest.lua
 CityPins.lua
 Companion.lua

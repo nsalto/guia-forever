@@ -377,10 +377,34 @@ G.linkHandlers.dqgoal = function(n) G.dq.setGoal(n > 0 and G.dungeons[n] or nil)
 -- [Ir a la entrada]: n = index in G.dungeons; the arrow (and the flight map distances) then point at the entrance.
 G.linkHandlers.dqenter = function(n)
   local d = G.dungeons[n]
-  local e = d and d.enter
-  if e and G.setWaypoint(e[1], e[2] / 100, e[3] / 100, "Entrada: " .. d.name) then
-    G.core.msg("Marcador en la entrada de " .. d.name .. ". La flecha te lleva; en el maestro de grifos ves qué vuelo te deja más cerca.")
+  local m, x, y, label, first = G.dq.entrancePoint(d)
+  if m and G.setWaypoint(m, x, y, label) then
+    if G.nextStep.followEntrance then G.nextStep.followEntrance(d) end
+    G.core.msg(first and ("La entrada de " .. d.name .. " está arriba de una montaña: la flecha te lleva primero a donde empieza el camino (" .. first .. ") y, cuando llegás, cambia sola a la entrada. En el maestro de grifos ves qué vuelo te deja más cerca.")
+      or ("Marcador en la entrada de " .. d.name .. ". La flecha te lleva; en el maestro de grifos ves qué vuelo te deja más cerca."))
   end
+end
+
+-- Where to walk for a dungeon's entrance: mapID, x, y (0-1), label, and the path start's name while it points there.
+-- With d.via (the entrance is up a hill that walking straight at would run into rock), the path start comes first;
+-- once you have been within 40 m of it, or are within 50 m of the entrance, the entrance itself (remembered until
+-- /reload).
+local onPath = {}
+function G.dq.entrancePoint(d)
+  local e = d and d.enter
+  if not e then return end
+  local v = d.via
+  if v and not onPath[d] then
+    local ns = G.nextStep
+    local pn, pw = ns.playerWorld()
+    local function near(p, yards)
+      local n, w = ns.world(p[1], p[2] / 100, p[3] / 100)
+      return pn and n and math.sqrt((n - pn) ^ 2 + (w - pw) ^ 2) < yards
+    end
+    if near(v, 40) or near(e, 50) then onPath[d] = true
+    else return v[1], v[2] / 100, v[3] / 100, "Subida: " .. v[4], v[4] end
+  end
+  return e[1], e[2] / 100, e[3] / 100, "Entrada: " .. d.name
 end
 -- The link next to a dungeon's name: [Preparar] when it has quests left, [Dejar] when it is the one you prepare.
 function G.dq.goalLink(d)
@@ -388,7 +412,7 @@ function G.dq.goalLink(d)
   if G.dq.goal() == d then return core.C.gold .. " ★ preparando" .. core.C.r .. " " .. core.actionLink("dqgoal", 0, "Dejar") end
   for i, x in ipairs(G.dungeons) do
     if x == d then
-      for _, c in ipairs(G.dq.candidates()) do if c == d then return " " .. core.actionLink("dqgoal", i, "Preparar") end end
+      for _, c in ipairs(G.dq.candidates()) do if c == d then return "  " .. core.actionLink("dqgoal", i, "★ Preparar", "|cfffb923c") end end
     end
   end
   return ""
