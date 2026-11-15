@@ -68,6 +68,13 @@ end
 -- The library turn-ins (Garion Wendell / his Horde counterpart): about twenty book quests the server keeps offering, worth
 -- little XP and only with the right book. Never part of the route.
 local NEVER_GIVERS = { [211033] = true, [211022] = true }
+-- Quests the data has that Forever does not give, checked in game: the library book turn-ins of every bracket (they
+-- came with the client's leftovers), Argos Nightwhisper's (he cannot be talked to) and Collin Mauren's (not there).
+local NOT_IN_ROUTE = { [3765] = true, [1078] = true }
+for _, r in ipairs({ { 78124, 78127 }, { 78142, 78150 }, { 79091, 79097 }, { 79535, 79536 }, { 79947, 79952 },
+  { 81947, 81956 }, { 82208, 82208 }, { 84396, 84402 } }) do
+  for id = r[1], r[2] do NOT_IN_ROUTE[id] = true end
+end
 local function onlyNeverGivers(q)
   if q.s.o then return false end
   for _, id in ipairs(q.s.u or {}) do if not NEVER_GIVERS[id] then return false end end
@@ -122,7 +129,7 @@ local function computeAvailable()
   local function allowed(mask, id) return not mask or not id or math.floor(mask / 2 ^ (id - 1)) % 2 == 1 end
   for qid, q in pairs(Q.quests) do
     if q.s and (q.s.u or q.s.o) and not q.k and not q.v and (q.m or 1) <= level and (q.l or level) >= minL and (q.l or level) <= maxL
-      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q) and haveStartItem(q) and not onlyNeverGivers(q) then
+      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] then
       if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x))
         and not (notOffered[qid] and notOffered[qid] >= level) and not rep[qid] then out[qid] = q end
     end

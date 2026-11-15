@@ -288,7 +288,7 @@ local function create()
   end)
 
   -- Arrow and distance every 0.05 s (the step itself: the ticker at the end of the file and quest events).
-  local tArrow = 0
+  local tArrow, arrivedAt = 0, nil
   bar:SetScript("OnUpdate", function(_, elapsed)
     tArrow = tArrow + elapsed
     if tArrow < 0.05 or not step then return end
@@ -300,7 +300,16 @@ local function create()
     end
     local north, east = tn - pn, -(tw - pw)
     local yards = math.sqrt(north * north + east * east)
-    bar.dist:SetText(yards < 8 and "|cff4ade80¡Llegaste!|r" or (math.floor(yards + 0.5) .. " m"))
+    -- Standing at a giver for a while without taking anything: the data may be wrong for Forever (the NPC has nothing
+    -- or cannot be talked to), so say how to skip it.
+    if yards < 8 then
+      arrivedAt = arrivedAt or GetTime()
+      local stuck = step.kind == "take" and GetTime() - arrivedAt > 10
+      bar.dist:SetText(stuck and "|cfffb923c¿No te da nada? Tocá »|r" or "|cff4ade80¡Llegaste!|r")
+    else
+      arrivedAt = nil
+      bar.dist:SetText(math.floor(yards + 0.5) .. " m")
+    end
     local facing = GetPlayerFacing and plain(try(GetPlayerFacing))
     if facing and yards >= 8 then
       -- Bearing counter-clockwise from north (as GetPlayerFacing), turned by where you look.

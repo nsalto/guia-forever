@@ -4,9 +4,11 @@ local ADDON = ...
 local G = GuiaForever -- data namespace filled by Data*.lua
 local DB
 
+-- Text colors, one meaning each: gold = headings, green = done / turn in, orange = needs attention, red = danger,
+-- grey = secondary. Blue is kept for actions, which are drawn as buttons (layoutBlocks), so "blue" text is near-white.
 local C = {
   title = "|cffd97757", gold = "|cffffd100", green = "|cff4ade80", grey = "|cff9ca3af",
-  red = "|cfff87171", blue = "|cff7dd3fc", orange = "|cfffb923c", r = "|r",
+  red = "|cfff87171", blue = "|cffe5e7eb", orange = "|cfffb923c", r = "|r",
 }
 local TABS = { "Ahora", "Misiones", "Ruta", "Grupo", "Clase", "Guía" }
 local TAB_CLASS = 5
@@ -2187,8 +2189,42 @@ end
 -- ---------------------------------------------------------------- card layout
 -- Everything is drawn as regions of the scroll child (so hyperlinks keep working), except progress
 -- bars which are StatusBars. Widgets are pooled and reused on every render.
-local pool = { fs = {}, title = {}, tex = {}, bar = {} }
-local used = { fs = 0, title = 0, tex = 0, bar = 0 }
+local pool = { fs = {}, title = {}, tex = {}, bar = {}, btn = {} }
+local used = { fs = 0, title = 0, tex = 0, bar = 0, btn = 0 }
+
+-- Button tokens. primary: go somewhere / start something; secondary: everything else; danger: SOS.
+local BTN = {
+  primary = { bg = { 0.12, 0.33, 0.58, 0.95 }, hover = { 0.18, 0.45, 0.76, 1 }, edge = { 0.49, 0.78, 0.99, 0.9 }, text = { 1, 1, 1 } },
+  secondary = { bg = { 1, 1, 1, 0.07 }, hover = { 1, 1, 1, 0.16 }, edge = { 1, 1, 1, 0.28 }, text = { 0.88, 0.89, 0.91 } },
+  danger = { bg = { 0.55, 0.13, 0.13, 0.95 }, hover = { 0.72, 0.18, 0.18, 1 }, edge = { 0.97, 0.44, 0.44, 0.9 }, text = { 1, 1, 1 } },
+}
+local BTN_H, BTN_GAP = 18, 4
+local PRIMARY_KINDS = { go = true, wp = true, dq = true, dqenter = true, ruta = true }
+
+-- Our action links in a line ("|Hguiaf:kind:id|h[label]|h", fold links excepted) come out as buttons: returns the text
+-- without them and { { link, label, variant }, ... }.
+local function splitActions(text)
+  local acts = {}
+  local clean = text:gsub("(|c%x%x%x%x%x%x%x%x)(|Hguiaf:[^|]+|h.-|h)|r", "%2")
+  clean = clean:gsub("|H(guiaf:([%a]+):[^|]*)|h(.-)|h", function(link, kind, label)
+    if kind == "fold" then return nil end
+    label = label:gsub("^%[%s*", ""):gsub("%s*%]$", ""):gsub("^»%s*", "")
+    local variant = (kind == "sos" and "danger") or ((PRIMARY_KINDS[kind] or label:find("Preparar") or label == "Seguir") and "primary") or "secondary"
+    acts[#acts + 1] = { link = link, label = label, variant = variant }
+    return ""
+  end)
+  if #acts == 0 then return text, acts end
+  clean = clean:gsub("%s+$", ""):gsub("%s*·%s*$", "")
+  return clean, acts
+end
+
+local function styleButton(b, variant)
+  local t = BTN[variant] or BTN.secondary
+  b.tokens = t
+  b.bg:SetColorTexture(unpack(t.bg))
+  b.edge:SetColorTexture(unpack(t.edge))
+  b.label:SetTextColor(unpack(t.text))
+end
 local function acquire(kind)
   used[kind] = used[kind] + 1
   local w = pool[kind][used[kind]]
@@ -2201,6 +2237,18 @@ local function acquire(kind)
       w:SetJustifyH("LEFT"); w:SetWordWrap(false)
     elseif kind == "tex" then
       w = content:CreateTexture(nil, "BACKGROUND")
+    elseif kind == "btn" then
+      w = CreateFrame("Button", nil, content)
+      w:SetHeight(BTN_H)
+      w.edge = w:CreateTexture(nil, "BACKGROUND"); w.edge:SetAllPoints()
+      w.bg = w:CreateTexture(nil, "BORDER"); w.bg:SetPoint("TOPLEFT", 1, -1); w.bg:SetPoint("BOTTOMRIGHT", -1, 1)
+      w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      w.label:SetPoint("CENTER", 0, 0)
+      w:SetScript("OnEnter", function(self) self.bg:SetColorTexture(unpack(self.tokens.hover)) end)
+      w:SetScript("OnLeave", function(self) self.bg:SetColorTexture(unpack(self.tokens.bg)) end)
+      w:SetScript("OnMouseDown", function(self) self.label:SetPoint("CENTER", 1, -1) end)
+      w:SetScript("OnMouseUp", function(self) self.label:SetPoint("CENTER", 0, 0) end)
+      w:SetScript("OnClick", function(self) if self.link then onLink(self.link) end end)
     else
       w = CreateFrame("StatusBar", nil, content)
       w:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
@@ -2213,6 +2261,35 @@ local function acquire(kind)
   end
   w:ClearAllPoints(); w:Show()
   return w
+end
+
+-- Buttons for a row, laid right to left ending at xRight (or left to right from xLeft). Returns their total width.
+local measure
+local function buttonsWidth(acts, size)
+  if not measure then measure = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); measure:Hide() end
+  local f = measure:GetFont(); if f then measure:SetFont(f, math.max(size - 1, 9), "") end
+  local w = 0
+  for i, a in ipairs(acts) do
+    measure:SetText(a.label)
+    a.w = math.ceil((measure:GetStringWidth() or (#a.label * 6)) + 16)
+    w = w + a.w + (i > 1 and BTN_GAP or 0)
+  end
+  return w
+end
+local function placeButtons(acts, y, xRight, xLeft, size)
+  local x = xLeft or xRight
+  for i = (xLeft and 1 or #acts), (xLeft and #acts or 1), (xLeft and 1 or -1) do
+    local a = acts[i]
+    local b = acquire("btn")
+    b.link = a.link
+    local f = b.label:GetFont(); if f then b.label:SetFont(f, math.max(size - 1, 9), "") end
+    b.label:SetText(a.label)
+    local w = a.w
+    b:SetWidth(w)
+    styleButton(b, a.variant)
+    if xLeft then b:SetPoint("TOPLEFT", content, "TOPLEFT", x, y); x = x + w + BTN_GAP
+    else b:SetPoint("TOPRIGHT", content, "TOPLEFT", x, y); x = x - w - BTN_GAP end
+  end
 end
 
 layoutBlocks = function()
@@ -2238,11 +2315,15 @@ layoutBlocks = function()
       if b.title then
         local t = acquire("title")
         local f = t:GetFont(); if f then t:SetFont(f, size + 1, "") end
-        t:SetPoint("TOPLEFT", content, "TOPLEFT", 12, y); t:SetWidth(width - 24)
-        t:SetText(b.title)
+        local title, acts = splitActions(b.title)
+        local bw = #acts > 0 and (buttonsWidth(acts, size) + 8) or 0
+        t:SetPoint("TOPLEFT", content, "TOPLEFT", 12, y); t:SetWidth(width - 24 - bw)
+        t:SetText(title)
         local col = b.color
         if col then t:SetTextColor(col[1], col[2], col[3]) else t:SetTextColor(1, 0.82, 0) end
-        y = y - (t:GetStringHeight() or 14) - (b.folded and 4 or 6)
+        local h = t:GetStringHeight() or 14
+        if #acts > 0 then placeButtons(acts, y + 2, width - 8, nil, size); h = math.max(h, BTN_H - 2) end
+        y = y - h - (b.folded and 4 or 6)
       end
       local i = 1
       while i <= #b.items do
@@ -2257,12 +2338,39 @@ layoutBlocks = function()
           i = i + 1
         else
           local lines = {}
-          while i <= #b.items and b.items[i].kind == "text" do lines[#lines + 1] = b.items[i].text; i = i + 1 end
-          local fs = acquire("fs")
-          local f = fs:GetFont(); if f then fs:SetFont(f, size, "") end
-          fs:SetPoint("TOPLEFT", content, "TOPLEFT", 10, y); fs:SetWidth(width - 20)
-          fs:SetText(table.concat(lines, "\n"))
-          y = y - (fs:GetStringHeight() or 14) - 4
+          local function flush()
+            if #lines == 0 then return end
+            local fs = acquire("fs")
+            local f = fs:GetFont(); if f then fs:SetFont(f, size, "") end
+            fs:SetPoint("TOPLEFT", content, "TOPLEFT", 10, y); fs:SetWidth(width - 20)
+            fs:SetText(table.concat(lines, "\n"))
+            y = y - (fs:GetStringHeight() or 14) - 4
+            lines = {}
+          end
+          while i <= #b.items and b.items[i].kind == "text" do
+            local text, acts = splitActions(b.items[i].text)
+            if #acts == 0 then lines[#lines + 1] = text
+            else
+              flush()
+              local bw = buttonsWidth(acts, size)
+              local visible = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "x"):gsub("^%s*•?%s*$", "")
+              if visible:find("%S") then
+                local fs = acquire("fs")
+                local f = fs:GetFont(); if f then fs:SetFont(f, size, "") end
+                fs:SetPoint("TOPLEFT", content, "TOPLEFT", 10, y - 2); fs:SetWidth(width - 28 - bw)
+                fs:SetText(text)
+                local h = fs:GetStringHeight() or 14
+                placeButtons(acts, y, width - 10, nil, size)
+                y = y - math.max(h + 2, BTN_H) - 4
+              else
+                local indent = (text:match("^(%s*)") or ""):len()
+                placeButtons(acts, y, nil, 10 + indent * 3, size)
+                y = y - BTN_H - 4
+              end
+            end
+            i = i + 1
+          end
+          flush()
         end
       end
       y = y - 4
