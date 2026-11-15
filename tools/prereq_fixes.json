@@ -30,5 +30,12 @@
     ],
     "replace": true,
     "why": "In Forever Marshal Marris offers Shadow Magic after Blackrock Blockade (seen in game), not after Blackrock Menace"
+  },
+  "19": {
+    "p": [
+      98387
+    ],
+    "replace": true,
+    "why": "In Forever Marris did not offer Tharil'zun after Blackrock Menace while Blackrock Blockade was in progress (seen in game); order unconfirmed, learning corrects it in game"
   }
 }

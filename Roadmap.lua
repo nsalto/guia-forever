@@ -105,7 +105,7 @@ end
 
 -- What the server really offers. The quest data comes from the classic game and Forever changed some quests, so when
 -- you open a quest giver, the quests expected from them that the server did not offer are remembered per character
--- (with your level then) and left out until you level up. The XP the server shows for an offered quest is kept too.
+-- (with your level then) and left out until you level up (prerequisite refusals: see chainRefused). The XP the server shows for an offered quest is kept too.
 local function learned()
   local c = G.core and G.core.charDB and G.core.charDB()
   if not c then return {}, {}, {} end
@@ -113,6 +113,14 @@ local function learned()
   c.questXP = c.questXP or {}
   c.notOfferedBy = c.notOfferedBy or {} -- ["u123"] = { [qid] = level }: this giver did not offer it (others may)
   return c.notOffered, c.questXP, c.notOfferedBy
+end
+-- Refusals that are not about your level (you had the quest's level): a prerequisite Forever added. Those survive
+-- level-ups; they clear when you turn in a quest of the same giver (the likely missing step) or after 3 levels.
+local function chainRefused()
+  local c = G.core and G.core.charDB and G.core.charDB()
+  if not c then return {} end
+  c.notOfferedChain = c.notOfferedChain or {}
+  return c.notOfferedChain
 end
 refusedBy = function(kind, id, qid, level)
   local _, _, by = learned()
@@ -149,7 +157,7 @@ end
 local function computeAvailable()
   myFaction = (UnitFactionGroup("player") == "Horde") and "H" or "A"
   local level = UnitLevel("player") or 1
-  local notOffered, rep = learned(), repeats()
+  local notOffered, rep, chain = learned(), repeats(), chainRefused()
   local _, _, race = UnitRace("player")
   local _, _, class = UnitClass("player")
   local minL, maxL = level - greyBelow(level), level + TOO_HARD
@@ -159,7 +167,8 @@ local function computeAvailable()
     if q.s and (q.s.u or q.s.o) and not q.k and not q.v and (q.m or 1) <= level and (q.l or level) >= minL and (q.l or level) <= maxL
       and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q, qid, level) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] and not professionQuest(qid) and not q.rep and not sodLeftover(qid, q) then
       if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x)) and not passed(qid, log)
-        and not (notOffered[qid] and notOffered[qid] >= level) and not rep[qid] then out[qid] = q end
+        and not (notOffered[qid] and notOffered[qid] >= level) and not rep[qid]
+        and not (chain[qid] and level < chain[qid] + 3) then out[qid] = q end
     end
   end
   return out
@@ -514,7 +523,11 @@ local function learn(event, given)
   local level = UnitLevel("player") or 1
   local changed = false
   for qid in pairs(rep or {}) do if not repeats()[qid] then repeats()[qid], changed = true, true end end
-  for qid in pairs(offered) do if notOffered[qid] then notOffered[qid], changed = nil, true end end
+  local chain = chainRefused()
+  for qid in pairs(offered) do
+    if notOffered[qid] then notOffered[qid], changed = nil, true end
+    if chain[qid] then chain[qid], changed = nil, true end
+  end
   -- Quests near grey can be hidden by the "low level quests" tracking option: those are never counted as missing.
   -- Only quests this giver alone starts are judged (another giver may still offer the rest).
   -- Quests near grey count only when the window offered something else: an empty window may just be the "low level
@@ -530,12 +543,14 @@ local function learn(event, given)
           if friendly(k, sid) then givers = givers + 1; if k == kind and sid == id then mine = true end end
         end
       end
-      if mine and givers == 1 then notOffered[qid] = level; missing[#missing + 1] = Q.title(qid); changed = true
+      if mine and givers == 1 then
+        notOffered[qid] = level; missing[#missing + 1] = Q.title(qid); changed = true
+        if (q.m or 1) <= level then chain[qid] = level end
       elseif mine then by[kind .. id] = by[kind .. id] or {}; by[kind .. id][qid] = level; changed = true end
     end
   end
   if #missing > 0 and G.core then
-    G.core.msg("Este PNJ no te ofrece " .. table.concat(missing, ", ") .. " (cambió en el Forever o pide algo antes): la saco de la ruta hasta que subas de nivel.")
+    G.core.msg("Este PNJ no te ofrece " .. table.concat(missing, ", ") .. " (cambió en el Forever o pide algo antes): la saco de la ruta hasta que entregues otra misión suya.")
   end
   if changed then cache = nil; if G.core and G.core.render then G.core.render() end end
 end
@@ -555,12 +570,22 @@ local function learnDetail()
 end
 
 local ev = CreateFrame("Frame")
-for _, e in ipairs({ "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP", "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL", "BAG_UPDATE_DELAYED" }) do
+for _, e in ipairs({ "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP", "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL", "QUEST_PROGRESS", "BAG_UPDATE_DELAYED" }) do
   pcall(ev.RegisterEvent, ev, e)
 end
 ev:SetScript("OnEvent", function(_, event, arg1)
   if event == "QUEST_TURNED_IN" and type(arg1) == "number" then
     local qid = arg1
+    local t = Q.ready() and Q.quests[qid]
+    if t then
+      local npcs = {}
+      for _, part in ipairs({ t.s, t.e }) do for _, id in ipairs(part and part.u or {}) do npcs[id] = true end end
+      local chain = chainRefused()
+      for other in pairs(chain) do
+        local o = Q.quests[other]
+        for _, id in ipairs(o and o.s and o.s.u or {}) do if npcs[id] then chain[other] = nil; break end end
+      end
+    end
     C_Timer.After(3, function()
       if not Q.done(qid) then repeats()[qid] = true; cache = nil; if G.core and G.core.render then G.core.render() end end
     end)
@@ -570,6 +595,13 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     pcall(learn, event); return
   end
   if event == "QUEST_DETAIL" then pcall(learnDetail); return end
+  if event == "QUEST_PROGRESS" then
+    -- A giver whose only business with you is a quest in progress opens it straight away, with no list: it has
+    -- nothing new to offer. (From a list, the list was seen a moment ago and already counted.)
+    local guid = plain(UnitGUID and UnitGUID("npc"))
+    if guid and (guid ~= listGuid or GetTime() - listAt > 30) then pcall(learn, "QUEST_PROGRESS", {}) end
+    return
+  end
   cache = nil
   if WorldMapFrame and WorldMapFrame:IsShown() then G.roadmap.refreshPins() end
 end)
