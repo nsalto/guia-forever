@@ -75,6 +75,12 @@ for _, r in ipairs({ { 78124, 78127 }, { 78142, 78150 }, { 79091, 79097 }, { 795
   { 81947, 81956 }, { 82208, 82208 }, { 84396, 84402 } }) do
   for id = r[1], r[2] do NOT_IN_ROUTE[id] = true end
 end
+-- "Camping 101: <profession>" (about ninety, one per profession and starting area): the giver offers each one only
+-- to characters with that profession, which the data does not say. Profession quests are not part of the route.
+local function professionQuest(qid)
+  local t = Q.titleData and Q.titleData[qid]
+  return type(t) == "string" and t:find("^Camping 101") ~= nil
+end
 local function onlyNeverGivers(q)
   if q.s.o then return false end
   for _, id in ipairs(q.s.u or {}) do if not NEVER_GIVERS[id] then return false end end
@@ -141,7 +147,7 @@ local function computeAvailable()
   local function allowed(mask, id) return not mask or not id or math.floor(mask / 2 ^ (id - 1)) % 2 == 1 end
   for qid, q in pairs(Q.quests) do
     if q.s and (q.s.u or q.s.o) and not q.k and not q.v and (q.m or 1) <= level and (q.l or level) >= minL and (q.l or level) <= maxL
-      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q, qid, level) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] then
+      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q, qid, level) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] and not professionQuest(qid) then
       if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x)) and not passed(qid, log)
         and not (notOffered[qid] and notOffered[qid] >= level) and not rep[qid] then out[qid] = q end
     end
