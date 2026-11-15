@@ -137,13 +137,41 @@ end
 -- Givers you opened recently ("u123" -> time): the next step goes to the other givers at the same stop first.
 local talked = {}
 function G.roadmap.talked(kind, id) local t = talked[(kind or "") .. (id or "")]; return t and GetTime() - t < 300 end
--- "[No está]": the giver is not where the data says (Forever moved or removed it). Its quests leave the route until
--- you level up, like quests a giver did not offer.
+-- "[No está]" and the bar's "»": the giver is not there or has nothing (Forever moved it or changed the chain). Its
+-- quests leave the route like a refusal: until you turn in another quest of that giver, or 3 levels later.
 function G.roadmap.skipQuests(list)
-  local notOffered = learned()
+  local notOffered, chain = learned(), chainRefused()
   local level = UnitLevel("player") or 1
-  for _, qid in ipairs(list or {}) do notOffered[qid] = level end
+  for _, qid in ipairs(list or {}) do notOffered[qid] = level; chain[qid] = level end
   cache = nil
+end
+
+-- Givers with a quest of yours still in progress (it starts or ends with them): { [npc id] = quest id }. Quest
+-- chains in Forever often hold the next quest until you finish the current one with the same NPC, so the route does
+-- not send you to take more from them before that; you pick those up when you turn it in.
+local function busyGivers()
+  local busy = {}
+  for _, e in ipairs(G.core.questEntries()) do
+    local lq = e.id and not e.complete and Q.quests[e.id]
+    if lq then
+      for _, part in ipairs({ lq.s, lq.e }) do
+        for _, id in ipairs(part and part.u or {}) do busy[id] = busy[id] or e.id end
+      end
+    end
+  end
+  return busy
+end
+G.roadmap.busyGivers = busyGivers
+local function waitsOnGiver(q, busy)
+  if q.s.o and #q.s.o > 0 then return false end
+  local any = false
+  for _, id in ipairs(q.s.u or {}) do
+    if friendly("u", id) then
+      if not busy[id] then return false end
+      any = true
+    end
+  end
+  return any
 end
 
 -- A quest whose follow-up you already did or have: you are past it (a breadcrumb, or a step the server skipped).
@@ -157,7 +185,7 @@ end
 local function computeAvailable()
   myFaction = (UnitFactionGroup("player") == "Horde") and "H" or "A"
   local level = UnitLevel("player") or 1
-  local notOffered, rep, chain = learned(), repeats(), chainRefused()
+  local notOffered, rep, chain, busy = learned(), repeats(), chainRefused(), busyGivers()
   local _, _, race = UnitRace("player")
   local _, _, class = UnitClass("player")
   local minL, maxL = level - greyBelow(level), level + TOO_HARD
@@ -168,7 +196,7 @@ local function computeAvailable()
       and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q, qid, level) and haveStartItem(q) and not onlyNeverGivers(q) and not NOT_IN_ROUTE[qid] and not professionQuest(qid) and not q.rep and not sodLeftover(qid, q) then
       if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x)) and not passed(qid, log)
         and not (notOffered[qid] and notOffered[qid] >= level) and not rep[qid]
-        and not (chain[qid] and level < chain[qid] + 3) then out[qid] = q end
+        and not (chain[qid] and level < chain[qid] + 3) and not waitsOnGiver(q, busy) then out[qid] = q end
     end
   end
   return out
@@ -406,7 +434,7 @@ function G.roadmap.build(s)
   if #givers > 8 then L(C.grey .. "  y " .. (#givers - 8) .. " PNJ más: todos están en el mapa con un \"!\"." .. C.r) end
   local fixed = G.roadmap.learnedCount()
   if fixed > 0 then
-    L(C.grey .. "Corregido con el servidor: " .. fixed .. (fixed == 1 and " misión que el Forever no ofrece" or " misiones que el Forever no ofrece") .. " (salen de la ruta hasta que subas de nivel)." .. C.r)
+    L(C.grey .. "Corregido con el servidor: " .. fixed .. (fixed == 1 and " misión que el Forever no ofrece" or " misiones que el Forever no ofrece") .. " (salen de la ruta hasta que subas de nivel o le entregues otra misión a ese PNJ)." .. C.r)
   end
 end
 
@@ -550,7 +578,10 @@ local function learn(event, given)
     end
   end
   if #missing > 0 and G.core then
-    G.core.msg("Este PNJ no te ofrece " .. table.concat(missing, ", ") .. " (cambió en el Forever o pide algo antes): la saco de la ruta hasta que entregues otra misión suya.")
+    local pending = kind == "u" and busyGivers()[id]
+    G.core.msg("Este PNJ no te ofrece " .. table.concat(missing, ", ") .. (pending
+      and (": primero terminá " .. Q.title(pending) .. " con él. La guía te lo vuelve a sugerir cuando se la entregues.")
+      or " (cambió en el Forever o pide algo antes): la saco de la ruta hasta que entregues otra misión suya."))
   end
   if changed then cache = nil; if G.core and G.core.render then G.core.render() end end
 end

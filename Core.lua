@@ -1237,7 +1237,7 @@ local function onLink(link)
     local list = giverSkips[id]
     if list and G.roadmap and G.roadmap.skipQuests then
       G.roadmap.skipQuests(list)
-      msg("Listo: saco de la ruta las misiones de ese PNJ hasta que subas de nivel.")
+      msg("Listo: saco de la ruta las misiones de ese PNJ hasta que le entregues otra misión suya (o en 3 niveles).")
       if G.core and G.core.renderNow then G.core.renderNow() end
     end
     return
@@ -1703,7 +1703,8 @@ local function maxQuests()
   return (C_QuestLog and C_QuestLog.GetMaxNumQuestsCanAccept and try(C_QuestLog.GetMaxNumQuestsCanAccept)) or 20
 end
 
--- Quests you skipped from the next-step bar: { [qid] = level }, left out of the plan until you level up.
+-- Quests you skipped from the next-step bar: { [qid] = level }, left out of the plan until you level up (the route's
+-- own memory, Roadmap skipQuests, keeps them out longer).
 local function skippedQuests()
   local c = charDB()
   c.skipped = c.skipped or {}
@@ -2039,11 +2040,13 @@ buildDirect = function(s)
   return true
 end
 
--- For NextStep.lua: the first step of the plan, and skipping it (until you level up).
+-- For NextStep.lua: the first step of the plan, and skipping it (see skippedQuests and Roadmap skipQuests).
 nextStep = function() local ok, plan = pcall(directPlan, playerState()); return ok and firstStep(plan) or nil end
 skipStep = function(qids)
   local level = UnitLevel("player") or 1
   for _, qid in ipairs(qids or {}) do skippedQuests()[qid] = level end
+  -- Same memory as [No está] and a refusal, so the route, the bar and the dungeon prep all leave it out alike.
+  if G.roadmap and G.roadmap.skipQuests then G.roadmap.skipQuests(qids) end
 end
 
 local function buildGuide()
