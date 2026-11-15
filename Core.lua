@@ -1101,6 +1101,7 @@ end
 -- ---------------------------------------------------------------- clickable actions
 -- Links inside the text: |Hguiaf:go:<questID>|h[Ir]|h  and  |Hguiaf:share:<questID>|h[Compartir]|h
 local waypoints = {} -- coordinates referenced by [Ir] links in walkthrough steps (rebuilt every render)
+local giverSkips = {} -- quest lists referenced by [No está] links (rebuilt every render)
 -- Links that move the arrow ([Ir], [Ir a la entrada]) are green with a » so they stand out from the text around them.
 local GO_LINKS = { go = true, wp = true, dq = true, dqenter = true }
 local function actionLink(kind, id, label, color)
@@ -1163,6 +1164,15 @@ local function onLink(link)
     local w = waypoints[id]
     if w and G.setWaypoint(w[1], w[2], w[3]) then
       msg(string.format("Marcador puesto en %.1f, %.1f. Lo ves en el mapa (M) y, cuando estás en esa zona, también en pantalla.", w[2] * 100, w[3] * 100))
+    end
+    return
+  end
+  if kind == "nogiver" then
+    local list = giverSkips[id]
+    if list and G.roadmap and G.roadmap.skipQuests then
+      G.roadmap.skipQuests(list)
+      msg("Listo: saco de la ruta las misiones de ese PNJ hasta que subas de nivel.")
+      if G.core and G.core.renderNow then G.core.renderNow() end
     end
     return
   end
@@ -1845,7 +1855,9 @@ local function firstStep(plan)
   end
   local turn, doing, take = {}, nil, nil
   for _, it in ipairs(st.items) do
-    if it.g then take = take or it
+    if it.g then
+      local fresh = not (G.roadmap.talked and G.roadmap.talked(it.g.kind, it.g.id))
+      if not take or (fresh and take.talked) then take = it; it.talked = not fresh end
     elseif it.e.complete then turn[#turn + 1] = it
     else doing = doing or it end
   end
@@ -1904,7 +1916,10 @@ buildDirect = function(s)
         for _, qid in ipairs(it.g.quests) do
           names[#names + 1] = G.qdb.title(qid) .. (boost[qid] and (C.grey .. " (mazmorra)" .. C.r) or "")
         end
-        B(C.blue .. "Tomá" .. C.r .. " en " .. it.g.name .. ": " .. table.concat(names, ", "))
+        waypoints[#waypoints + 1] = { s.mapID, it.g.x / 100, it.g.y / 100, it.g.name }
+        giverSkips[#giverSkips + 1] = it.g.quests
+        B(C.blue .. "Tomá" .. C.r .. " en " .. it.g.name .. ": " .. table.concat(names, ", ") .. "  " .. actionLink("wp", #waypoints, "Ir")
+          .. " " .. actionLink("nogiver", #giverSkips, "No está", "|cff9ca3af"))
       elseif it.e.complete then turnIn[#turnIn + 1] = it.e.title or "?"
       else B(((it.obj and it.obj.text) or it.e.title or "?") .. C.grey .. " (" .. (it.e.title or "?") .. ")" .. C.r) end
     end
@@ -2276,6 +2291,7 @@ local function render()
   blocks, curBlock, foldKeys, skipping = {}, nil, {}, false
   if G.dq then G.dq.clearLinks() end
   waypoints = {}
+  giverSkips = {}
   if not DB.tab or DB.tab > #BUILDERS then DB.tab = 1 end
   local ok, err = pcall(BUILDERS[DB.tab or 1])
   if not ok then blocks = {}; curBlock = nil; raw(C.red .. "Error en la guía: " .. tostring(err) .. C.r) end

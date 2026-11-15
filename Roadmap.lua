@@ -82,13 +82,31 @@ local function learned()
   c.questXP = c.questXP or {}
   return c.notOffered, c.questXP
 end
+-- Quests the server offers again after you turn them in (repeatable in Forever, not in the data): left out of the route.
+local function repeats()
+  local c = G.core and G.core.charDB and G.core.charDB()
+  if not c then return {} end
+  c.repeatable = c.repeatable or {}
+  return c.repeatable
+end
+-- Givers you opened recently ("u123" -> time): the next step goes to the other givers at the same stop first.
+local talked = {}
+function G.roadmap.talked(kind, id) local t = talked[(kind or "") .. (id or "")]; return t and GetTime() - t < 300 end
+-- "[No está]": the giver is not where the data says (Forever moved or removed it). Its quests leave the route until
+-- you level up, like quests a giver did not offer.
+function G.roadmap.skipQuests(list)
+  local notOffered = learned()
+  local level = UnitLevel("player") or 1
+  for _, qid in ipairs(list or {}) do notOffered[qid] = level end
+  cache = nil
+end
 
 -- { [qid] = q } for every quest you could accept now. Prerequisites mean "any one of these done".
 -- World-event quests (Darkmoon Faire, holidays) and profession quests are left out.
 local function computeAvailable()
   myFaction = (UnitFactionGroup("player") == "Horde") and "H" or "A"
   local level = UnitLevel("player") or 1
-  local notOffered = learned()
+  local notOffered, rep = learned(), repeats()
   local _, _, race = UnitRace("player")
   local _, _, class = UnitClass("player")
   local minL, maxL = level - greyBelow(level), level + TOO_HARD
@@ -98,7 +116,7 @@ local function computeAvailable()
     if q.s and (q.s.u or q.s.o) and not q.k and not q.v and (q.m or 1) <= level and (q.l or level) >= minL and (q.l or level) <= maxL
       and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q) and haveStartItem(q) then
       if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x))
-        and not (notOffered[qid] and notOffered[qid] >= level) then out[qid] = q end
+        and not (notOffered[qid] and notOffered[qid] >= level) and not rep[qid] then out[qid] = q end
     end
   end
   return out
@@ -438,6 +456,7 @@ end
 local function learn(event, given)
   if not Q.ready() then return end
   local kind, id = openGiver()
+  if kind then talked[kind .. id] = GetTime() end
   local offered = kind and (given or offeredNow(event))
   if not offered then return end
   local notOffered = learned()
@@ -483,7 +502,13 @@ local ev = CreateFrame("Frame")
 for _, e in ipairs({ "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP", "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL", "BAG_UPDATE_DELAYED" }) do
   pcall(ev.RegisterEvent, ev, e)
 end
-ev:SetScript("OnEvent", function(_, event)
+ev:SetScript("OnEvent", function(_, event, arg1)
+  if event == "QUEST_TURNED_IN" and type(arg1) == "number" then
+    local qid = arg1
+    C_Timer.After(3, function()
+      if not Q.done(qid) then repeats()[qid] = true; cache = nil; if G.core and G.core.render then G.core.render() end end
+    end)
+  end
   if event == "GOSSIP_SHOW" or event == "QUEST_GREETING" then
     listGuid, listAt = plain(UnitGUID and UnitGUID("npc")), GetTime()
     pcall(learn, event); return
