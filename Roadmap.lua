@@ -436,32 +436,41 @@ local function openGiver()
 end
 
 -- Quest IDs the open window offers, or nil when the client does not say (then nothing is learned).
+-- The second table holds the offered quests the window marks as repeatable.
 local function offeredNow(event)
-  local set = {}
+  local set, rep = {}, {}
   if event == "GOSSIP_SHOW" then
     local list = C_GossipInfo and try(C_GossipInfo.GetAvailableQuests)
     if type(list) ~= "table" then return end
-    for _, q in ipairs(list) do if q.questID then set[q.questID] = true end end
-    return set
+    for _, q in ipairs(list) do
+      if q.questID then
+        set[q.questID] = true
+        if plain(q.repeatable) == true then rep[q.questID] = true end
+      end
+    end
+    return set, rep
   end
   if not (GetNumAvailableQuests and GetAvailableQuestInfo) then return end
   for i = 1, (try(GetNumAvailableQuests) or 0) do
-    local ok, _, _, _, _, qid = pcall(GetAvailableQuestInfo, i)
+    local ok, _, frequency, isRepeatable, _, qid = pcall(GetAvailableQuestInfo, i)
     if not (ok and qid) then return end
     set[qid] = true
+    if plain(isRepeatable) == true then rep[qid] = true end
   end
-  return set
+  return set, rep
 end
 
 local function learn(event, given)
   if not Q.ready() then return end
   local kind, id = openGiver()
   if kind then talked[kind .. id] = GetTime() end
-  local offered = kind and (given or offeredNow(event))
+  local offered, rep
+  if kind then if given then offered = given else offered, rep = offeredNow(event) end end
   if not offered then return end
   local notOffered = learned()
   local level = UnitLevel("player") or 1
   local changed = false
+  for qid in pairs(rep or {}) do if not repeats()[qid] then repeats()[qid], changed = true, true end end
   for qid in pairs(offered) do if notOffered[qid] then notOffered[qid], changed = nil, true end end
   -- Quests near grey can be hidden by the "low level quests" tracking option: those are never counted as missing.
   -- Only quests this giver alone starts are judged (another giver may still offer the rest).
