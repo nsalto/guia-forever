@@ -2549,7 +2549,7 @@ local function createUI()
         after = function() if G.questMarks then G.questMarks.refresh() end end }),
       with(flag("lootIcons"), { label = "Íconos de saqueo", desc = "Mano o bolsa del juego sobre cadáveres y objetos que se pueden levantar, todo alrededor tuyo (no solo adelante) y hasta 15 metros.",
         after = function() if G.questMarks then G.questMarks.applyLootIcons() end end }),
-      with(flag("objectSparkle"), { label = "Brillo en objetos para usar", desc = "Un brillo dorado con destellos sobre el objeto que podés usar más cerca (objetos de misión, cofres, hierbas...), además del ícono del juego. Necesita los íconos de saqueo prendidos." }),
+      with(flag("objectSparkle"), { label = "Brillo en objetos para usar", desc = "Un brillo dorado con destellos sobre los objetos que te sirven: los que pide una misión que tenés y los cofres (no sillas, buzones ni fogatas), además del ícono del juego. Necesita los íconos de saqueo prendidos." }),
       with(flag("lootGlow"), { label = "Marco en la ventana de saqueo", desc = "Borde dorado en el objeto que pide tu misión." }),
       with({ get = function() return DB.lootReminder == true end, set = function(v) DB.lootReminder = v end, default = false },
         { label = "Aviso para saquear", desc = "Al matar un bicho que suelta un objeto de tu misión (según la tabla de botín, con su %). Apagado: no suma nada a la pantalla." }),

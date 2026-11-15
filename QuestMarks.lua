@@ -392,9 +392,34 @@ local function applyLootIcons()
   return supported
 end
 
--- Sparkle on usable objects (quest objects, chests, herbs...): the game gives the object you can use right now a
--- nameplate (SoftTargetNameplateInteract); we hang a soft gold glow with two slowly turning stars on it. Mobs and
--- players never get it. Nothing shows on clients that give objects no nameplate.
+-- Sparkle on the objects worth using: ones a quest in your log still needs (from the quest database: objective
+-- objects and objects that give an objective item) and chests. Chairs, mailboxes, fires and the rest get nothing.
+-- The game gives the object you can use right now a nameplate (SoftTargetNameplateInteract); we hang a soft gold
+-- glow with two slowly turning stars on it. Nothing shows on clients that give objects no nameplate.
+local CHEST_WORDS = { "cofre", "baúl", "arcón", "chest", "trunk", "footlocker", "strongbox", "lockbox" }
+local function questObjectIDs()
+  local Q, set = G.qdb, {}
+  if not (Q and Q.ready and Q.ready() and G.core) then return set end
+  for _, e in ipairs(G.core.questEntries()) do
+    local q = not e.complete and e.id and Q.quests[e.id]
+    local o = q and q.o
+    if o then
+      for _, id in ipairs(o.o or {}) do set[id] = true end
+      for _, item in ipairs(o.i or {}) do for _, id in ipairs(Q.itemObjects and Q.itemObjects[item] or {}) do set[id] = true end end
+    end
+  end
+  return set
+end
+local function worthSparkle(unit, guid)
+  local _, _, _, _, _, id = strsplit("-", guid)
+  id = tonumber(id)
+  if id and questObjectIDs()[id] then return true end
+  local name = plain(UnitName(unit))
+  if type(name) ~= "string" then return false end
+  name = name:lower()
+  for _, w in ipairs(CHEST_WORDS) do if name:find(w, 1, true) then return true end end
+  return false
+end
 local sparkles = {}
 local function sparkleFor(plate)
   if sparkles[plate] then return sparkles[plate] end
@@ -424,7 +449,7 @@ local function sparkleUpdate(unit, removed)
   local d = db()
   local guid = not removed and plain(UnitGUID(unit))
   local object = type(guid) == "string" and guid:find("^GameObject") ~= nil
-  if object and d and d.lootIcons ~= false and d.objectSparkle ~= false then
+  if object and d and d.lootIcons ~= false and d.objectSparkle ~= false and worthSparkle(unit, guid) then
     local f = sparkleFor(plate); if f then f:Show() end
   elseif sparkles[plate] then sparkles[plate]:Hide() end
 end
