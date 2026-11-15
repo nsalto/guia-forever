@@ -1134,6 +1134,31 @@ local function goToQuest(id)
   end
 end
 
+-- "Guía: llevarme acá" on a quest's menu (quest log and objective tracker): the arrow goes to that quest and the
+-- guide stops suggesting until "Sugerencias" is turned back on.
+local function questFromMenu(owner, ctx)
+  for _, o in ipairs({ ctx, owner }) do
+    if type(o) == "table" then
+      local id = o.questID or o.id or (o.GetQuestID and select(2, pcall(o.GetQuestID, o)))
+      if type(id) == "number" and id > 0 then return id end
+    end
+  end
+end
+local function addQuestMenu(tag)
+  if not (Menu and Menu.ModifyMenu) then return end
+  pcall(Menu.ModifyMenu, tag, function(owner, root, ctx)
+    local id = questFromMenu(owner, ctx)
+    if not id or not root or not root.CreateButton then return end
+    if root.CreateDivider then root:CreateDivider() end
+    root:CreateButton("Guía: llevarme acá", function()
+      if G.nextStep and G.nextStep.following() then G.nextStep.setFollow(false, "Flecha a tu misión; sugerencias en pausa") end
+      goToQuest(id)
+    end)
+  end)
+end
+for _, tag in ipairs({ "MENU_QUEST_OBJECTIVE_TRACKER", "MENU_QUEST_MAP_LOG_TITLE", "MENU_QUEST_LOG_TITLE", "MENU_QUEST_TRACKER",
+  "MENU_QUEST_MAP_FRAME", "MENU_QUEST_LOG" }) do addQuestMenu(tag) end
+
 local function shareQuest(id)
   if not (C_QuestLog and C_QuestLog.SetSelectedQuest and QuestLogPushQuest) then return end
   local prev = try(C_QuestLog.GetSelectedQuest)
@@ -2139,7 +2164,7 @@ local updateToggles
 local layoutBlocks
 local applySize, smallHeight -- defined further down (window size modes)
 local settingsPanel, minimapButton
-local frame, scroll, content, text, tabButtons, specButton, header, xpBar, restBar, xpText, nameText, classIcon, subText, pvpToggle, notifyToggle
+local frame, scroll, content, text, tabButtons, specButton, header, xpBar, restBar, xpText, nameText, classIcon, subText, pvpToggle, notifyToggle, followToggle
 
 local function classColor()
   local class = select(2, UnitClass("player"))
@@ -2156,6 +2181,11 @@ updateToggles = function()
   local m = G.notify and G.notify.mode()
   fit(notifyToggle, "Avisos: " .. (({ listas = "listas", todo = "todo", no = "no" })[m] or "?"))
   notifyToggle.label:SetTextColor(m == "no" and 0.5 or 0.29, m == "no" and 0.5 or 0.87, m == "no" and 0.5 or 0.5)
+  if followToggle then
+    local f = not G.nextStep or G.nextStep.following()
+    fit(followToggle, "Sugerencias: " .. (f and "sí" or "no"))
+    followToggle.label:SetTextColor(f and 0.29 or 0.5, f and 0.87 or 0.5, 0.5)
+  end
 end
 
 local function updateHeader()
@@ -2533,10 +2563,16 @@ local function createUI()
     return "Avisos de misión: " .. (G.notify and G.notify.label() or "?") .. "\nClic: listas -> todo -> apagados"
   end, function() if G.notify then G.notify.command("") end end)
   notifyToggle:SetPoint("RIGHT", mini, "LEFT", -3, 0)
+  followToggle = toggle("Sugerencias", 70, function()
+    local on = not G.nextStep or G.nextStep.following()
+    return "Sugerencias de la guía: " .. (on and "prendidas" or "apagadas")
+      .. "\nPrendidas: la guía elige el próximo paso y la flecha te lleva.\nApagadas: la flecha va solo adonde la mandes ([Ir] o \"Guía: llevarme acá\" en el menú de una misión)."
+  end, function() if G.nextStep then G.nextStep.setFollow(not G.nextStep.following()) end end)
+  followToggle:SetPoint("RIGHT", notifyToggle, "LEFT", -3, 0)
   pvpToggle = toggle("PvP", 26, function()
     return "Alertas de enemigos: " .. ((G.pvp and G.pvp.isOn()) and "activadas" or "apagadas") .. "\nClic para prender/apagar"
   end, function() if G.pvp then G.pvp.command("") end end)
-  pvpToggle:SetPoint("RIGHT", notifyToggle, "LEFT", -3, 0)
+  pvpToggle:SetPoint("RIGHT", followToggle, "LEFT", -3, 0)
 
   -- Settings button: opens the Ajustes panel over the content area.
   local gear = CreateFrame("Button", nil, header)
@@ -2661,6 +2697,8 @@ local function createUI()
         after = function() if G.roadmap then G.roadmap.refreshPins() end end }),
       with(optIn("nextBar"), { label = "Barra del próximo paso", desc = "Una barra con recuadro arriba de la pantalla: ícono de qué hacer, flecha, metros, progreso y » para saltar el paso. Apagada por defecto: la flecha en pantalla ya dice lo mismo. Arrastrala para moverla; también con /guia barra.",
         after = function() if G.nextStep then G.nextStep.refresh() end end }),
+      with(flag("followGuide"), { label = "Sugerencias de la guía", desc = "La guía elige el próximo paso (entregar, hacer, tomar o preparar una mazmorra) y la flecha te lleva. Apagadas: la flecha va solo adonde la mandes ([Ir], o \"Guía: llevarme acá\" en el menú de una misión). También con el botón Sugerencias arriba de la ventana.",
+        after = function() if G.nextStep then G.nextStep.setFollow(DB.followGuide ~= false) end end }),
       with(flag("nextBarWaypoint"), { label = "Flecha en pantalla", desc = "Una flecha en el medio de la pantalla, con el nombre y los metros, que apunta al paso de la barra y a cualquier [Ir] que toques. No tapa los clics ni la cámara: mantené Shift y pasá el mouse para ver el detalle, o arrastrala para moverla. Apagada: [Ir] usa el marcador del juego. También con /guia flecha.",
         after = function()
           if not G.nextStep then return end

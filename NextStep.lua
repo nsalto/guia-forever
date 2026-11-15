@@ -13,6 +13,10 @@ local function db() return G.core and G.core.db() end
 local function on() local d = db(); return d and d.nextBar == true end
 local function autoMark() local d = db(); return d and d.nextBarWaypoint ~= false end
 G.nextStep.ownArrow = autoMark
+-- "Sugerencias": the guide picks the next step and the arrow follows it. Off, the arrow only goes where you send it
+-- ([Ir], or "Llevarme acá" on a quest's menu).
+local function follow() local d = db(); return d and d.followGuide ~= false end
+G.nextStep.following = follow
 
 local ICON = {
   take = "Interface\\GossipFrame\\AvailableQuestIcon",
@@ -335,6 +339,12 @@ function G.nextStep.refresh()
     G.core.charDB().dungeonGoal = nil
     G.core.msg("Llegaste a " .. goal.name .. ". ¡Suerte! Al salir, la flecha vuelve a guiarte para subir de nivel.")
   end
+  if not follow() then
+    if bar then bar:Hide() end
+    if target and target.fromStep then G.nextStep.hideArrow() end
+    step, stepKey = nil, nil
+    return
+  end
   local wantBar, wantArrow = on(), autoMark()
   if bar and not wantBar then bar:Hide() end
   if not (wantBar or wantArrow) then return end
@@ -383,6 +393,86 @@ function G.nextStep.refresh()
   end
   bar.skip:SetShown(#s.quests > 0 and (not s.goal or s.kind == "take"))
   bar:Show()
+end
+
+-- Suggestions on/off. Back on, the arrow goes to the guide's step again right away.
+function G.nextStep.setFollow(v, why)
+  local d = db()
+  if not d then return end
+  d.followGuide = v and true or false
+  if v then stepKey = nil end
+  G.nextStep.refresh()
+  if G.core then
+    G.core.msg(v and "Sugerencias prendidas: la flecha vuelve a llevarte al próximo paso de la guía."
+      or ((why or "Sugerencias apagadas") .. ". Para que la guía vuelva a elegir, tocá \"Sugerencias\" arriba de la ventana."))
+    if G.core.render then G.core.render() end
+  end
+end
+
+-- The target on the world map: a blue marker with a cyan glow, in place of the game's gold pin.
+local mapPin
+local function nativePins(alpha)
+  if not (WorldMapFrame and WorldMapFrame.EnumeratePinsByTemplate) then return end
+  for _, tpl in ipairs({ "WaypointLocationPinTemplate", "UserWaypointPinTemplate" }) do
+    local ok, f, st, var = pcall(WorldMapFrame.EnumeratePinsByTemplate, WorldMapFrame, tpl)
+    if ok and type(f) == "function" then pcall(function() for pin in f, st, var do pin:SetAlpha(alpha) end end) end
+  end
+end
+local function mapPinUpdate()
+  if not (WorldMapFrame and WorldMapFrame:IsShown()) then return end
+  local mapID = WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
+  local t = target
+  local x, y = t and t.x, t and t.y
+  if t and t.mapID and mapID and t.mapID ~= mapID and C_Map and C_Map.GetMapRectOnMap then
+    -- A child map's target, drawn on its parent (zone -> continent).
+    local ok, l, r, tp, b = pcall(C_Map.GetMapRectOnMap, t.mapID, mapID)
+    if ok and l and r and tp and b and r > l then x, y = l + (r - l) * t.x, tp + (b - tp) * t.y else x = nil end
+  end
+  if not (t and x and y and x > 0 and x < 1 and y > 0 and y < 1 and not t.noPos) then
+    if mapPin then mapPin:Hide() end
+    nativePins(1)
+    return
+  end
+  local canvas = WorldMapFrame.GetCanvas and WorldMapFrame:GetCanvas()
+  if not canvas then return end
+  if not mapPin then
+    mapPin = CreateFrame("Frame", nil, canvas)
+    mapPin:SetSize(28, 28)
+    mapPin.glow = mapPin:CreateTexture(nil, "BACKGROUND")
+    mapPin.glow:SetTexture("Interface\\Cooldown\\star4"); mapPin.glow:SetBlendMode("ADD")
+    mapPin.glow:SetVertexColor(0.3, 0.85, 1); mapPin.glow:SetSize(70, 70); mapPin.glow:SetPoint("CENTER")
+    mapPin.icon = mapPin:CreateTexture(nil, "ARTWORK")
+    mapPin.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_6"); mapPin.icon:SetAllPoints()
+    local t0 = 0
+    mapPin:SetScript("OnUpdate", function(self, e)
+      t0 = t0 + e
+      self.glow:SetRotation(t0 * 0.8)
+      local a = 0.55 + 0.45 * math.abs(math.sin(t0 * 2.5))
+      self.glow:SetAlpha(a)
+      self.glow:SetSize(60 + 16 * a, 60 + 16 * a)
+    end)
+  end
+  local scale = 1 / ((WorldMapFrame.GetCanvasScale and WorldMapFrame:GetCanvasScale()) or 1)
+  mapPin:SetParent(canvas)
+  mapPin:SetFrameLevel(canvas:GetFrameLevel() + 2100)
+  mapPin:SetScale(scale)
+  mapPin:ClearAllPoints()
+  mapPin:SetPoint("CENTER", canvas, "TOPLEFT", x * canvas:GetWidth() / scale, -y * canvas:GetHeight() / scale)
+  mapPin:Show()
+  nativePins(0)
+end
+if WorldMapFrame and WorldMapFrame.AddDataProvider and MapCanvasDataProviderMixin and CreateFromMixins then
+  local prov = CreateFromMixins(MapCanvasDataProviderMixin)
+  function prov:RemoveAllData() if mapPin then mapPin:Hide() end end
+  function prov:RefreshAllData() pcall(mapPinUpdate) end
+  function prov:OnCanvasScaleChanged() pcall(mapPinUpdate) end
+  function prov:OnMapChanged() pcall(mapPinUpdate) end
+  WorldMapFrame:AddDataProvider(prov)
+  local acc = 0
+  CreateFrame("Frame"):SetScript("OnUpdate", function(_, e)
+    acc = acc + e
+    if acc > 0.5 then acc = 0; if WorldMapFrame:IsShown() then pcall(mapPinUpdate) end end
+  end)
 end
 
 -- The arrow in the middle of the screen: on by default, it follows the step. Turned off, it and the game's marker are
