@@ -54,6 +54,17 @@ local function friendly(kind, id)
   local f = Q.unitFaction and Q.unitFaction[id]
   return not f or f == myFaction
 end
+-- Quests an item starts are offered by the listed giver too only while you carry that item (the library books).
+local function itemCount(id)
+  local f = (C_Item and C_Item.GetItemCount) or GetItemCount
+  local n = f and plain(try(f, id))
+  return type(n) == "number" and n or 0
+end
+local function haveStartItem(q)
+  if not q.s.i then return true end
+  for _, id in ipairs(q.s.i) do if itemCount(id) > 0 then return true end end
+  return false
+end
 local function hasGiver(q)
   for _, kind in ipairs({ "u", "o" }) do
     for _, id in ipairs(q.s[kind] or {}) do if friendly(kind, id) then return true end end
@@ -85,7 +96,7 @@ local function computeAvailable()
   local function allowed(mask, id) return not mask or not id or math.floor(mask / 2 ^ (id - 1)) % 2 == 1 end
   for qid, q in pairs(Q.quests) do
     if q.s and (q.s.u or q.s.o) and not q.k and not q.v and (q.m or 1) <= level and (q.l or level) >= minL and (q.l or level) <= maxL
-      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q) then
+      and allowed(q.r, race) and allowed(q.c, class) and not log[qid] and hasGiver(q) and haveStartItem(q) then
       if not Q.done(qid) and preMet(q) and not (q.x and anyDone(q.x))
         and not (notOffered[qid] and notOffered[qid] >= level) then out[qid] = q end
     end
@@ -424,10 +435,10 @@ local function offeredNow(event)
   return set
 end
 
-local function learn(event)
+local function learn(event, given)
   if not Q.ready() then return end
   local kind, id = openGiver()
-  local offered = kind and offeredNow(event)
+  local offered = kind and (given or offeredNow(event))
   if not offered then return end
   local notOffered = learned()
   local level = UnitLevel("player") or 1
@@ -455,9 +466,13 @@ local function learn(event)
 end
 
 -- The quest window shows the real reward XP: kept so the ranking uses it while you stay at this level.
+-- A giver with a single quest opens it straight away, with no list first: then that quest is all it offers.
+local listGuid, listAt = nil, 0
 local function learnDetail()
   local qid = GetQuestID and try(GetQuestID)
   if not qid or qid == 0 then return end
+  local guid = plain(UnitGUID and UnitGUID("npc"))
+  if guid and (guid ~= listGuid or GetTime() - listAt > 30) then pcall(learn, "QUEST_DETAIL", { [qid] = true }) end
   local notOffered, seen = learned()
   notOffered[qid] = nil
   local xp = GetRewardXP and plain(try(GetRewardXP))
@@ -465,11 +480,14 @@ local function learnDetail()
 end
 
 local ev = CreateFrame("Frame")
-for _, e in ipairs({ "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP", "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL" }) do
+for _, e in ipairs({ "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP", "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL", "BAG_UPDATE_DELAYED" }) do
   pcall(ev.RegisterEvent, ev, e)
 end
 ev:SetScript("OnEvent", function(_, event)
-  if event == "GOSSIP_SHOW" or event == "QUEST_GREETING" then pcall(learn, event); return end
+  if event == "GOSSIP_SHOW" or event == "QUEST_GREETING" then
+    listGuid, listAt = plain(UnitGUID and UnitGUID("npc")), GetTime()
+    pcall(learn, event); return
+  end
   if event == "QUEST_DETAIL" then pcall(learnDetail); return end
   cache = nil
   if WorldMapFrame and WorldMapFrame:IsShown() then G.roadmap.refreshPins() end
